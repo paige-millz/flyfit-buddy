@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plane } from "lucide-react";
+import onflyLogo from "@/assets/onfly-logo.png";
 import { Aircraft, CargoPart } from "@/data/aircraft";
 import StepIndicator from "@/components/cargo/StepIndicator";
 import AircraftSelect from "@/components/cargo/AircraftSelect";
@@ -28,9 +28,7 @@ const Index = () => {
       <header className="border-b bg-card card-shadow sticky top-0 z-40">
         <div className="container max-w-5xl mx-auto flex items-center justify-between py-3 px-4">
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-full gold-gradient flex items-center justify-center">
-              <Plane className="w-5 h-5 text-primary-foreground" />
-            </div>
+            <img src={onflyLogo} alt="OnFly Airlines" className="w-10 h-10 object-contain" />
             <div>
               <h1 className="text-base font-bold tracking-tight">OnFly Airlines</h1>
               <p className="text-[10px] text-muted-foreground leading-tight">Air Cargo Fit Tool</p>
