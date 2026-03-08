@@ -4,6 +4,10 @@
 
 Built for [OnFly Air](https://onflyair.com), our on-demand air charter brokerage, to streamline cargo planning for brokers who need fast answers on whether a shipment will work on a given aircraft.
 
+<p align="center">
+  <img src="screenshot.png" alt="FlyFit Buddy — Aircraft Selection & Cargo Fit Check" width="700"/>
+</p>
+
 ---
 
 ## What It Does
