@@ -1,73 +1,37 @@
-# Welcome to your Lovable project
+# FlyFit Buddy
 
-## Project info
+**Air cargo fit calculator that checks whether cargo physically fits through aircraft doors and cabins — with real specs for 14+ aircraft types.**
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+Built for [OnFly Air](https://onflyair.com), our on-demand air charter brokerage, to streamline cargo planning for brokers who need fast answers on whether a shipment will work on a given aircraft.
 
-## How can I edit this code?
+---
 
-There are several ways of editing your application.
+## What It Does
 
-**Use Lovable**
+Select an aircraft, enter your cargo dimensions, and FlyFit Buddy instantly tells you:
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- **Door clearance** — will the cargo physically fit through the aircraft door?
+- **Cabin fit** — does it fit inside the cabin once loaded?
+- **Payload check** — is the total weight within limits (including mechanics, tools, and seat removal)?
+- **Visual layout** — 2D visualization of cargo placement in the cabin
 
-Changes made via Lovable will be committed automatically to this repo.
+The tool includes a database of real aircraft specs (King Air 90, PC-12, Caravan 208, CJ1, and more) with accurate door dimensions, cabin measurements, max payload, and seat configurations.
 
-**Use your preferred IDE**
+## Why I Built It
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+In charter brokerage, the first question is always "will it fit?" Brokers were manually looking up specs and doing mental math for every quote. This tool turns a 10-minute phone-call-and-spreadsheet process into a 30-second answer.
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+## Tech Stack
 
-Follow these steps:
+React · TypeScript · Vite · Tailwind CSS · shadcn/ui
+
+## Run Locally
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+---
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+*Built by [Paige Miller](https://github.com/paige-millz) for [OnFly Air](https://onflyair.com)*
