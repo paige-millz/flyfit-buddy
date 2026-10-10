@@ -41,6 +41,9 @@
     --success-foreground: 0 0% 100%;
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 10%;
+    --warning-strong: 32 90% 34%;
+    --ink: 30 8% 9%;
+    --ink-foreground: 40 20% 96%;
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -72,6 +75,11 @@
     --border: 0 0% 18%;
     --input: 0 0% 18%;
     --ring: 40 48% 58%;
+    --success: 142 60% 45%;
+    --warning: 38 92% 50%;
+    --warning-strong: 38 92% 60%;
+    --ink: 0 0% 4%;
+    --ink-foreground: 40 20% 96%;
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 224.3 76.3% 48%;
@@ -89,8 +97,13 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  @media print {
+    @page { margin: 0.5in; }
+    body { background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 }
 
