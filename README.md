@@ -12,14 +12,25 @@ Built for [OnFly Air](https://onflyair.com), our on-demand air charter brokerage
 
 ## What It Does
 
-Select an aircraft, enter your cargo dimensions, and FlyFit Buddy instantly tells you:
+Enter the cargo once. Every aircraft in the fleet gets checked and ranked:
 
-- **Door clearance** — will the cargo physically fit through the aircraft door?
-- **Cabin fit** — does it fit inside the cabin once loaded?
-- **Payload check** — is the total weight within limits (including mechanics, tools, and seat removal)?
-- **Visual layout** — 2D visualization of cargo placement in the cabin
+- **GO / CHECK / NO-GO per aircraft** — workable options first, smallest capable airframe first
+- **Door clearance** — finds the best cross-section through the door (respects "this side up")
+- **Cabin fit** — any orientation, with a configurable clearance margin
+- **Floor plan** — top-down layout of every unit (quantities expanded), single layer, no stacking
+- **Payload** — cargo + mechanics + tools, with optional seat-removal credit
+- **Warnings** — long items that must turn from door into cabin, floor overflow, payload above 90%
 
-The tool includes a database of real aircraft specs (King Air 90, PC-12, Caravan 208, CJ1, and more) with accurate door dimensions, cabin measurements, max payload, and seat configurations.
+Built for daily use:
+
+- Inline-editable manifest, quantities, duplicate, metric input (cm/kg converts to in/lb)
+- CSV import/export (`Name, Length, Width, Height, Weight[, Qty, This side up]`)
+- Autosaves locally; **Share link** reopens the exact load on any device
+- **Copy summary** puts an email-ready write-up on the clipboard; **Print** gives a clean PDF
+
+**Model limits:** cargo is a rectangular box, the cabin a rectangle. Fuselage taper, sill height, tie-downs, CG and fuel are not modeled. Irregular items (e.g. winglets) may fit where a box wouldn't. Confirm with the operator before quoting.
+
+Fit logic lives in `src/lib/fit.ts` (pure, unit-tested). Aircraft specs live in `src/data/aircraft.ts`.
 
 ## Why I Built It
 
@@ -33,7 +44,9 @@ React · TypeScript · Vite · Tailwind CSS · shadcn/ui
 
 ```sh
 npm install
-npm run dev
+npm run dev      # http://localhost:8080
+npm test         # fit engine tests
+npm run build    # static site in dist/
 ```
 
 ---
