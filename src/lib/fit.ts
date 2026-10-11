@@ -75,17 +75,19 @@ export interface Seat {
   removable: boolean;
 }
 
+/** True when the type's seat positions are known well enough to draw and plan around. */
+export const seatsKnown = (ac: Aircraft) => !!geometryFor(ac).profile?.seatsVerified;
+
 /**
- * Seats on the floor. From the type profile when it has one (stations and sides from
- * public layouts); otherwise an assumed arrangement: one seat per side per row at
- * SEAT_PITCH_IN, skipping the door bay. Removable seats in the assumed layout are the
- * ones nearest the door on the far side first (the swing zone), then on the door side.
+ * Seats on the floor, only when their positions are verified for the type. Inferred
+ * layouts are not drawn and not used as floor obstacles: the floor plan then assumes
+ * seats out, and the turn check applies a coarse seat allowance instead.
  */
 export function seatLayout(ac: Aircraft): Seat[] {
-  const L = ac.cabinLength, W = floorWidth(ac);
+  const W = floorWidth(ac);
   const geo = geometryFor(ac);
-  const doorX = geo.door.stationIn;
-  if (geo.profile?.seats.length) {
+  if (!geo.profile?.seatsVerified || !geo.profile.seats.length) return [];
+  {
     return geo.profile.seats.map((st) => {
       const far = st.side !== geo.door.side;
       return {
@@ -98,18 +100,6 @@ export function seatLayout(ac: Aircraft): Seat[] {
       };
     });
   }
-  const bay = cargoDoor(ac).width / 2 + SEAT_DEPTH_IN / 2 + 2;
-  const seats: Seat[] = [];
-  for (let x = 14; x + SEAT_DEPTH_IN <= L - 6 && seats.length < ac.seats; x += SEAT_PITCH_IN) {
-    seats.push({ x, y: 1, w: SEAT_DEPTH_IN, h: SEAT_WIDTH_IN, far: true, removable: false });
-    if (seats.length < ac.seats && Math.abs(x + SEAT_DEPTH_IN / 2 - doorX) > bay)
-      seats.push({ x, y: W - 1 - SEAT_WIDTH_IN, w: SEAT_DEPTH_IN, h: SEAT_WIDTH_IN, far: false, removable: false });
-  }
-  const byPriority = [...seats].sort(
-    (a, b) => Number(b.far) - Number(a.far) || Math.abs(a.x + a.w / 2 - doorX) - Math.abs(b.x + b.w / 2 - doorX),
-  );
-  byPriority.slice(0, ac.removableSeats).forEach((st) => (st.removable = true));
-  return seats;
 }
 
 /** Seats still on the floor under the current option. */
@@ -129,6 +119,8 @@ export interface TurnCheck {
   reach: number;
   okSeatsIn: boolean;
   okSeatsOut: boolean;
+  /** Seat positions aren't verified for this type: the seat allowance is a coarse estimate. */
+  seatsEstimated: boolean;
   /** Seats on the far side within the swing zone that would have to come out. */
   seatsToPull: number;
   /** Feasible under the current seat option. */
@@ -164,12 +156,17 @@ export function checkTurn(item: CargoItem, orient: [number, number], ac: Aircraf
   const aftRoom = ac.cabinLength - doorX, fwdRoom = doorX;
   const aft = aftRoom >= fwdRoom;
   const roomOk = g.reach <= Math.max(aftRoom, fwdRoom) - c;
-  // Seats on the far wall inside the zone the leading end sweeps.
+  // Seats on the far wall inside the zone the leading end sweeps. With a verified seat
+  // map that's the actual seats; otherwise assume one seat row opposite the door per
+  // SEAT_PITCH_IN of reach, all pullable up to the type's removable count.
   const zone: [number, number] = aft ? [doorX - across / 2, doorX + g.reach] : [doorX - g.reach, doorX + across / 2];
-  const inZone = seatLayout(ac).filter((st) => st.far && st.x + st.w > zone[0] && st.x < zone[1]);
-  const okSeatsIn = roomOk && (g.widthNeeded <= W - (inZone.length ? SEAT_WIDTH_IN : 0));
-  const seatsToPull = okSeatsIn ? 0 : inZone.length;
-  const okSeatsOut = roomOk && g.widthNeeded <= W && inZone.every((st) => st.removable);
+  const known = seatsKnown(ac);
+  const inZone = known ? seatLayout(ac).filter((st) => st.far && st.x + st.w > zone[0] && st.x < zone[1]) : [];
+  const estSeats = known ? inZone.length : ac.seats > 0 ? Math.min(Math.ceil((g.reach + across / 2) / SEAT_PITCH_IN), Math.max(1, ac.seats >> 1)) : 0;
+  const blocked = known ? inZone.length > 0 : estSeats > 0;
+  const okSeatsIn = roomOk && g.widthNeeded <= W - (blocked ? SEAT_WIDTH_IN : 0);
+  const seatsToPull = okSeatsIn ? 0 : estSeats;
+  const okSeatsOut = roomOk && g.widthNeeded <= W && (known ? inZone.every((st) => st.removable) : seatsToPull <= removableSeatCount(ac));
   return {
     needed,
     entryAngle: needed ? g.entryAngle : 90,
@@ -178,6 +175,7 @@ export function checkTurn(item: CargoItem, orient: [number, number], ac: Aircraf
     reach: g.reach,
     okSeatsIn,
     okSeatsOut,
+    seatsEstimated: !known,
     seatsToPull,
     ok: !needed || okSeatsIn || (opts.removeSeats && okSeatsOut),
   };
@@ -402,7 +400,7 @@ export function evaluate(items: CargoItem[], ac: Aircraft, opts: PlanOptions): F
         ? `${x.item.name} can't make the turn from the door: the swing needs ${fmt(t.widthNeeded)}" across, floor is ${fmt(floorWidth(ac) - c)}"`
         : t.reach > Math.max(doorStation(ac), ac.cabinLength - doorStation(ac)) - c
           ? `${x.item.name} can't make the turn: the swing reaches ${fmt(t.reach)}" down the cabin from the door, more than there is`
-          : `${x.item.name} can't make the turn with seats in: ${t.seatsToPull} seat${t.seatsToPull > 1 ? "s" : ""} in the swing zone aren't removable`,
+          : `${x.item.name} can't make the turn with seats in: ${t.seatsToPull} seat${t.seatsToPull > 1 ? "s" : ""} in the swing zone${t.seatsEstimated ? " (estimated)" : ""}, more than are removable`,
     );
   }
 
@@ -414,7 +412,7 @@ export function evaluate(items: CargoItem[], ac: Aircraft, opts: PlanOptions): F
     for (const x of checks) {
       const t = x.turn;
       if (t && t.needed && !t.ok && t.okSeatsOut)
-        soft.push(`${x.item.name} needs ${t.seatsToPull} seat${t.seatsToPull > 1 ? "s" : ""} pulled to make the turn — turn on "Pull removable seats"`);
+        soft.push(`${x.item.name} needs ${t.seatsToPull === 1 ? "the seat" : `~${t.seatsToPull} seats`} opposite the door pulled to make the turn${t.seatsEstimated ? " (seat layout not verified)" : ""} — turn on "Pull removable seats"`);
     }
     if (payload.pct > 90) soft.push(`Payload at ${Math.round(payload.pct)}% — little margin for fuel`);
   }
