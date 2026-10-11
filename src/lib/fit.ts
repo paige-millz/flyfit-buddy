@@ -246,6 +246,35 @@ export function doorFit(item: CargoItem, ac: Aircraft, clearance = 0): [number, 
   return null;
 }
 
+/** Inches the item would have to shrink (on its tightest axis, best orientation) to clear the door. 0 = fits. */
+export function doorShortfall(item: CargoItem, ac: Aircraft, clearance = 0): number {
+  const door = cargoDoor(ac);
+  const dw = door.width - clearance;
+  const dh = door.height - clearance;
+  const need = (a: number, b: number) => Math.max(0, a - dw, b - dh);
+  if (item.upright) return Math.min(need(item.length, item.height), need(item.width, item.height));
+  const [s0, s1] = sortAsc([item.length, item.width, item.height]);
+  return Math.min(need(s0, s1), need(s1, s0));
+}
+
+/** Inches the item would have to shrink to fit the cabin box. 0 = fits. */
+export function cabinShortfall(item: CargoItem, ac: Aircraft, clearance = 0): number {
+  const L = ac.cabinLength - clearance;
+  const W = ac.cabinWidth - clearance;
+  const H = ac.cabinHeight - clearance;
+  if (item.upright) {
+    const [a, b] = sortAsc([item.length, item.width]);
+    const [fa, fb] = sortAsc([L, W]);
+    return Math.max(0, item.height - H, a - fa, b - fb);
+  }
+  const i = sortAsc([item.length, item.width, item.height]);
+  const c = sortAsc([L, W, H]);
+  return Math.max(0, ...i.map((v, k) => v - c[k]));
+}
+
+/** A near miss: a few inches of packaging might be the difference. */
+export const UNPACK_MARGIN_IN = 4;
+
 /** Does the item fit inside the cabin in some allowed orientation? */
 export function cabinFit(item: CargoItem, ac: Aircraft, clearance = 0): boolean {
   const L = ac.cabinLength - clearance;
@@ -390,6 +419,15 @@ export function evaluate(items: CargoItem[], ac: Aircraft, opts: PlanOptions): F
   const cabinFails = checks.filter((x) => !x.cabin);
   if (doorFails.length) hard.push(`Door too small for ${doorFails.map((x) => x.item.name).join(", ")}`);
   if (cabinFails.length) hard.push(`Cabin too small for ${cabinFails.map((x) => x.item.name).join(", ")}`);
+  // Near misses: a solid box that's a couple of inches over is often crate, foam or bubble wrap.
+  for (const x of checks) {
+    if (x.door && x.cabin) continue;
+    const short = Math.max(x.door ? 0 : doorShortfall(x.item, ac, c), x.cabin ? 0 : cabinShortfall(x.item, ac, c));
+    if (short > 0 && short <= UNPACK_MARGIN_IN)
+      hard.push(
+        `${x.item.name} misses by ${fmt(short)}" — if it's crated, boxed or bubble-wrapped, strip the packaging and re-measure the bare part; that may be the difference`,
+      );
+  }
   if (!payload.pass) hard.push(`Over payload by ${fmt(-payload.margin)} lb`);
   for (const x of checks) {
     const t = x.turn;

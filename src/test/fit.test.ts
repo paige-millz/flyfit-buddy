@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { AIRCRAFT_DB, type Aircraft, type CargoItem } from "@/data/aircraft";
-import { cabinFit, calcPayload, DEFAULT_OPTIONS, doorFit, evaluate, layoutFloor, rankFleet, removableSeatCount, seatLayout, turnGeometry } from "@/lib/fit";
+import { cabinFit, calcPayload, cargoDoor, DEFAULT_OPTIONS, doorFit, evaluate, layoutFloor, rankFleet, removableSeatCount, seatLayout, turnGeometry } from "@/lib/fit";
 
 const ac = (id: string) => AIRCRAFT_DB.find((a) => a.id === id) as Aircraft;
 const item = (p: Partial<CargoItem>): CargoItem => ({
@@ -157,5 +157,19 @@ describe("evaluate / rankFleet", () => {
     expect(ranked[0].verdict).not.toBe("no-go");
     expect(["caravan-208", "pc-12"]).toContain(ranked[0].aircraft.id);
     expect(ranked.at(-1)?.verdict).toBe("no-go");
+  });
+});
+
+describe("near-miss unpack hint", () => {
+  const ka = ac("king-air-200");
+  const door = cargoDoor(ka);
+  it("suggests stripping packaging when the door is missed by a few inches", () => {
+    const r = evaluate([item({ name: "Pump", length: 60, width: door.width + 2, height: door.height - 10 })], ka, opts);
+    expect(r.verdict).toBe("no-go");
+    expect(r.reasons.some((s) => /strip the packaging/.test(s))).toBe(true);
+  });
+  it("stays quiet when the miss is large", () => {
+    const r = evaluate([item({ name: "Pump", length: 60, width: door.width + 20, height: door.height + 20 })], ka, opts);
+    expect(r.reasons.some((s) => /strip the packaging/.test(s))).toBe(false);
   });
 });
