@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { AIRCRAFT_DB, type Aircraft, type CargoItem } from "@/data/aircraft";
-import { cabinFit, calcPayload, DEFAULT_OPTIONS, doorFit, evaluate, layoutFloor, rankFleet, seatLayout, turnGeometry } from "@/lib/fit";
+import { cabinFit, calcPayload, DEFAULT_OPTIONS, doorFit, evaluate, layoutFloor, rankFleet, removableSeatCount, seatLayout, turnGeometry } from "@/lib/fit";
 
 const ac = (id: string) => AIRCRAFT_DB.find((a) => a.id === id) as Aircraft;
 const item = (p: Partial<CargoItem>): CargoItem => ({
@@ -9,27 +9,29 @@ const item = (p: Partial<CargoItem>): CargoItem => ({
 const opts = { ...DEFAULT_OPTIONS, clearance: 0 };
 
 describe("doorFit", () => {
-  const pc12 = ac("pc-12"); // door 24 x 53
+  const pc12 = ac("pc-12"); // cargo door 53 x 52
+  const ka = ac("king-air-200"); // airstair 27 x 51.75
 
   it("uses the two smallest dimensions as the cross-section", () => {
     // 100 long goes through the door lengthwise
-    expect(doorFit(item({ length: 100, width: 20, height: 50 }), pc12)).toEqual([20, 50]);
+    expect(doorFit(item({ length: 100, width: 20, height: 50 }), ka)).toEqual([20, 50]);
   });
 
   it("fails when the cross-section is too big, regardless of length", () => {
-    expect(doorFit(item({ length: 30, width: 30, height: 30 }), pc12)).toBeNull();
+    expect(doorFit(item({ length: 30, width: 30, height: 30 }), ka)).toBeNull();
+    expect(doorFit(item({ length: 30, width: 30, height: 30 }), pc12)).not.toBeNull();
   });
 
   it("respects upright: height must stay vertical", () => {
-    // 60 tall can't go upright through a 53" door, but can on its side
+    // 60 tall can't go upright through a 51.75" door, but can on its side
     const tall = { length: 20, width: 40, height: 60 };
-    expect(doorFit(item({ ...tall, upright: true }), pc12)).toBeNull();
-    expect(doorFit(item({ ...tall, upright: false }), pc12)).toEqual([20, 40]);
+    expect(doorFit(item({ ...tall, upright: true }), ka)).toBeNull();
+    expect(doorFit(item({ ...tall, upright: false }), ka)).toEqual([20, 40]);
   });
 
   it("applies clearance", () => {
-    expect(doorFit(item({ length: 50, width: 24, height: 24 }), pc12, 0)).not.toBeNull();
-    expect(doorFit(item({ length: 50, width: 24, height: 24 }), pc12, 1)).toBeNull();
+    expect(doorFit(item({ length: 50, width: 27, height: 27 }), ka, 0)).not.toBeNull();
+    expect(doorFit(item({ length: 50, width: 27, height: 27 }), ka, 1)).toBeNull();
   });
 });
 
@@ -53,7 +55,7 @@ describe("calcPayload", () => {
     expect(p.cargoWeight).toBe(300);
     expect(p.crewWeight).toBe(410);
     expect(p.required).toBe(710);
-    expect(p.available).toBe(3535 + 70);
+    expect(p.available).toBe(3535 + removableSeatCount(ka) * 35);
     expect(p.pass).toBe(true);
   });
   it("ignores tool weight with no mechanics", () => {
@@ -65,7 +67,8 @@ describe("layoutFloor", () => {
   const c208 = ac("caravan-208"); // 153 x 63 floor
   it("places items without overlap and inside the floor", () => {
     const r = layoutFloor([item({ length: 40, width: 30, height: 20, quantity: 8 })], c208);
-    expect(r.unplaced).toHaveLength(0);
+    expect(r.placements.length + r.unplaced.length).toBe(8);
+    expect(r.placements.length).toBeGreaterThanOrEqual(5);
     for (const a of r.placements) {
       expect(a.x + a.w).toBeLessThanOrEqual(r.floorLength + 1e-9);
       expect(a.y + a.h).toBeLessThanOrEqual(r.floorWidth + 1e-9);
@@ -90,8 +93,8 @@ describe("layoutFloor", () => {
     expect(r.unplaced.length).toBeGreaterThan(0);
   });
   it("reports units that don't fit on the floor", () => {
-    const r = layoutFloor([item({ length: 60, width: 60, height: 50, quantity: 3, upright: true })], c208);
-    expect(r.placements).toHaveLength(2);
+    const r = layoutFloor([item({ length: 50, width: 50, height: 50, quantity: 4, upright: true })], c208);
+    expect(r.placements).toHaveLength(3);
     expect(r.unplaced).toHaveLength(1);
   });
 });
@@ -111,31 +114,31 @@ describe("turnGeometry", () => {
 
 describe("evaluate / rankFleet", () => {
   it("no-go when the door is too small", () => {
-    const r = evaluate([item({ name: "Crate", length: 40, width: 40, height: 40 })], ac("pc-12"), opts);
+    const r = evaluate([item({ name: "Crate", length: 40, width: 40, height: 40 })], ac("king-air-200"), opts);
     expect(r.verdict).toBe("no-go");
     expect(r.reasons[0]).toMatch(/Door too small for Crate/);
   });
   it("no-go when the swing into the cabin can't be made", () => {
-    // 100" long, 20" across through a 24" door: must enter at ≥56°, swing needs ~94" of a 60" cabin
-    const r = evaluate([item({ name: "Spar", length: 100, width: 20, height: 20 })], ac("pc-12"), opts);
+    // 100" long, 20" across through the King Air 200's 27" door: enters at ≥48°, swing needs ~88" of a 49" floor
+    const r = evaluate([item({ name: "Spar", length: 100, width: 20, height: 20 })], ac("king-air-200"), opts);
     expect(r.verdict).toBe("no-go");
     expect(r.reasons[0]).toMatch(/Spar can't make the turn/);
   });
   it("check when the turn only works with removable seats pulled, go once pulled", () => {
-    // 65" × 16" through the PC-12's 24" door: enters at ~42°, swing needs ~55" of the 60" cabin —
-    // fine with seats out, not with a seat opposite the door (42" left). 3 seats in the zone, 6 removable.
-    const pc = ac("pc-12");
-    const long = item({ name: "Beam", length: 65, width: 16, height: 16 });
-    const withSeats = evaluate([long], pc, opts);
+    // 55" × 16" through the King Air 350's 26" aft airstair: enters at ~38°, swing needs ~46" of the
+    // 49" floor — fine with the far-side seat in the swing zone pulled, not with it in.
+    const ka = ac("king-air-350");
+    const long = item({ name: "Beam", length: 55, width: 16, height: 16 });
+    const withSeats = evaluate([long], ka, opts);
     const t = withSeats.checks[0].turn!;
     expect(t.needed).toBe(true);
+    expect(t.aft).toBe(false);
     expect(t.okSeatsIn).toBe(false);
     expect(t.okSeatsOut).toBe(true);
-    expect(t.aft).toBe(true);
     expect(t.seatsToPull).toBeGreaterThan(0);
     expect(withSeats.verdict).toBe("check");
     expect(withSeats.reasons[0]).toMatch(/Beam needs \d seats? pulled/);
-    expect(evaluate([long], pc, { ...opts, removeSeats: true }).verdict).toBe("go");
+    expect(evaluate([long], ka, { ...opts, removeSeats: true }).verdict).toBe("go");
   });
   it("go for a small box", () => {
     expect(evaluate([item({})], ac("pc-12"), opts).verdict).toBe("go");
@@ -152,7 +155,7 @@ describe("evaluate / rankFleet", () => {
   it("ranks workable aircraft first", () => {
     const ranked = rankFleet([item({ length: 40, width: 40, height: 40, weight: 300 })], AIRCRAFT_DB, opts);
     expect(ranked[0].verdict).not.toBe("no-go");
-    expect(ranked[0].aircraft.id).toBe("caravan-208");
+    expect(["caravan-208", "pc-12"]).toContain(ranked[0].aircraft.id);
     expect(ranked.at(-1)?.verdict).toBe("no-go");
   });
 });

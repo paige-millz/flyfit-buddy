@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import type { FitResult } from "@/lib/fit";
+import { cargoDoor, removableSeatCount, type FitResult } from "@/lib/fit";
 import { cn } from "@/lib/utils";
 import { itemColor } from "./colors";
 import VerdictBadge from "./VerdictBadge";
@@ -28,6 +28,8 @@ const verdictCopy = {
 
 const AircraftDetail = ({ result, clearance }: { result: FitResult; clearance: number }) => {
   const { aircraft: ac, verdict, reasons, checks, payload, layout } = result;
+  const door = cargoDoor(ac);
+  const removable = removableSeatCount(ac);
 
   return (
     <Card className="card-shadow overflow-hidden">
@@ -48,10 +50,10 @@ const AircraftDetail = ({ result, clearance }: { result: FitResult; clearance: n
             <p className="mt-0.5 text-sm text-muted-foreground">{verdictCopy[verdict]}</p>
           </div>
           <dl className="grid w-full grid-cols-2 gap-x-5 gap-y-2 text-xs sm:w-auto sm:grid-cols-4 sm:text-right">
-            <Spec label="Door" value={`${ac.doorWidth}×${ac.doorHeight}"`} />
+            <Spec label={`Door (${door.side === "left" ? "LH" : "RH"} ${door.type})`} value={`${door.width}×${door.height}"`} />
             <Spec label="Cabin L×W×H" value={`${ac.cabinLength}×${ac.cabinWidth}×${ac.cabinHeight}"`} />
             <Spec label="Max payload" value={`${n(ac.maxPayload)} lb`} />
-            <Spec label="Seats" value={`${ac.seats}${ac.removableSeats > 0 ? ` (${ac.removableSeats} removable)` : ""}`} />
+            <Spec label="Seats" value={`${ac.seats}${removable > 0 ? ` (${removable} removable)` : ""}`} />
           </dl>
         </div>
         {reasons.length > 0 && (
@@ -91,17 +93,17 @@ const AircraftDetail = ({ result, clearance }: { result: FitResult; clearance: n
         </Section>
 
         {/* 3D load */}
-        <Section title="Loading sequence (3D)" aside="door placed ⅓ back; position not in the data">
+        <Section title="Loading sequence (3D)" aside={`${door.side === "left" ? "LH" : "RH"} ${door.type} door at ${Math.round(door.station)}" from the cabin front${door.approx ? " (approx)" : ""}`}>
           <Suspense fallback={<div className="h-64 animate-pulse rounded-lg border bg-secondary/40" />}>
             <LoadAnimation result={result} />
           </Suspense>
         </Section>
 
         {/* Door */}
-        <Section title="Door clearance" aside={`${ac.doorWidth}×${ac.doorHeight} in${clearance ? `, ${clearance}" clearance` : ""}`}>
+        <Section title="Door clearance" aside={`${door.width}×${door.height} in${clearance ? `, ${clearance}" clearance` : ""}`}>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {checks.map((c, i) => (
-              <DoorView key={c.item.id} check={c} index={i} doorW={ac.doorWidth} doorH={ac.doorHeight} />
+              <DoorView key={c.item.id} check={c} index={i} doorW={door.width} doorH={door.height} />
             ))}
           </div>
         </Section>

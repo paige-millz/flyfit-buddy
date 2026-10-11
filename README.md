@@ -30,9 +30,9 @@ Built for daily use:
 - Autosaves locally; **Share link** reopens the exact load on any device
 - **Copy summary** puts an email-ready write-up on the clipboard; **Print** gives a clean PDF
 
-**Model limits:** cargo is a rectangular box, the cabin a rectangle. Fuselage taper, tie-downs, CG and fuel are not modeled. Door position, sill height and seat layout are assumed (door ⅓ back from the nose, one 18" seat row per side at 30" pitch) since the specs don't carry them. Irregular items (e.g. winglets) may fit where a box wouldn't. Confirm with the operator before quoting.
+**Model limits:** cargo is a rectangular box, the cabin a rectangle. Fuselage taper, tie-downs, CG and fuel are not modeled. Door station, sill height and seat stations come from public layouts and are typical, not serial-specific. Irregular items (e.g. winglets) may fit where a box wouldn't. Confirm with the operator before quoting.
 
-Fit logic lives in `src/lib/fit.ts` (pure, unit-tested). Aircraft specs live in `src/data/aircraft.ts`.
+Fit logic lives in `src/lib/fit.ts` (pure, unit-tested). Aircraft specs live in `src/data/aircraft.ts`; per-type geometry (cargo door, station, side, sill, floor width, seat map, airframe shape) lives in `src/data/profiles.ts` with public sources per entry. Values marked approx are inferred from published overall dimensions, not quoted; verify against the W&B manual before relying on seat stations.
 
 ## Why I Built It
 

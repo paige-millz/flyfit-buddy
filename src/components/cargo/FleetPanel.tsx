@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { AircraftCategory } from "@/data/aircraft";
-import type { FitResult } from "@/lib/fit";
+import { cargoDoor, type FitResult } from "@/lib/fit";
 import { cn } from "@/lib/utils";
 import VerdictBadge from "./VerdictBadge";
 
@@ -74,6 +74,7 @@ const FleetPanel = ({ results, selectedId, onSelect }: FleetPanelProps) => {
         <ul className="max-h-[340px] divide-y overflow-y-auto border-t" role="listbox" aria-label="Aircraft">
           {visible.map((r) => {
             const ac = r.aircraft;
+            const door = cargoDoor(ac);
             const active = ac.id === selectedId;
             return (
               <li key={ac.id}>
@@ -93,7 +94,7 @@ const FleetPanel = ({ results, selectedId, onSelect }: FleetPanelProps) => {
                       <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{ac.category}</span>
                     </div>
                     <div className="truncate text-xs text-muted-foreground">
-                      {r.reasons[0] ?? `Door ${ac.doorWidth}×${ac.doorHeight} · cabin ${ac.cabinLength}×${ac.cabinWidth}×${ac.cabinHeight} in`}
+                      {r.reasons[0] ?? `Door ${door.width}×${door.height} · cabin ${ac.cabinLength}×${ac.cabinWidth}×${ac.cabinHeight} in`}
                     </div>
                   </div>
                   <div className="shrink-0 text-right">

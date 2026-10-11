@@ -1,11 +1,12 @@
 import type { CargoItem } from "@/data/aircraft";
-import { type FitResult, type PlanOptions, VERDICT_LABEL, totalUnits } from "@/lib/fit";
+import { cargoDoor, type FitResult, type PlanOptions, VERDICT_LABEL, totalUnits } from "@/lib/fit";
 
 const n = (v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 1 });
 
 /** Plain-text summary for pasting into an email or chat. */
 export function buildSummary(items: CargoItem[], opts: PlanOptions, selected: FitResult, ranked: FitResult[]): string {
   const { aircraft: ac, payload } = selected;
+  const door = cargoDoor(ac);
   const lines = [
     `Cargo fit — ${ac.name}: ${VERDICT_LABEL[selected.verdict]}`,
     "",
@@ -17,7 +18,7 @@ export function buildSummary(items: CargoItem[], opts: PlanOptions, selected: Fi
   if (opts.mechanics > 0) lines.push(`  • ${opts.mechanics} mechanic(s) + tools — ${n(payload.crewWeight)} lb`);
   lines.push(
     "",
-    `Door ${ac.doorWidth}×${ac.doorHeight} in · Cabin ${ac.cabinLength}×${ac.cabinWidth}×${ac.cabinHeight} in · ${opts.clearance}" clearance`,
+    `Door ${door.width}×${door.height} in · Cabin ${ac.cabinLength}×${ac.cabinWidth}×${ac.cabinHeight} in · ${opts.clearance}" clearance`,
     `Payload ${n(payload.required)} / ${n(payload.available)} lb (${Math.round(payload.pct)}%)${payload.seatCredit ? `, seats pulled` : ""} — ${payload.pass ? `${n(payload.margin)} lb margin` : `OVER by ${n(-payload.margin)} lb`}`,
   );
   if (selected.reasons.length) lines.push("", "Notes:", ...selected.reasons.map((r) => `  • ${r}`));
