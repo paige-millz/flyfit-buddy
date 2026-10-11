@@ -111,7 +111,7 @@ const AircraftDetail = ({ result, clearance }: { result: FitResult; clearance: n
         {/* Cabin */}
         <Section
           title={`Cabin floor plan (top-down, no stacking${layout.seats.length ? `, ${layout.seats.length} seats in` : ", seats out"})`}
-          aside={`${Math.round(layout.floorUtilization * 100)}% floor used`}
+          aside={layout.seats.length ? `${Math.round(layout.floorUtilization * 100)}% floor used` : `${Math.round(layout.floorUtilization * 100)}% floor used · seat positions not verified for this type, so none are drawn`}
         >
           <CabinLayout result={result} />
           {layout.unplaced.length > 0 && (

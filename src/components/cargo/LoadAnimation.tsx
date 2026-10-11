@@ -203,6 +203,9 @@ function fuselageShell(L: number, W: number, H: number, doorX: number, DW: numbe
 const LoadAnimation = ({ result }: { result: FitResult }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(true);
+  const [showAirframe, setShowAirframe] = useState(true);
+  const airframeRef = useRef(showAirframe);
+  airframeRef.current = showAirframe;
   const [stepIdx, setStepIdx] = useState(0);
   const [status, setStatus] = useState("");
   const playingRef = useRef(playing);
@@ -300,7 +303,10 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
     const skinSolid = new THREE.MeshStandardMaterial({ color: 0xe9e4da, roughness: 0.4, metalness: 0.15 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x3a3630, roughness: 0.8 });
     const glass = new THREE.MeshStandardMaterial({ color: 0x2b3a4a, roughness: 0.2, metalness: 0.4 });
-    const addSolid = (m: THREE.Mesh) => { m.castShadow = true; root.add(m); return m; };
+    // Everything outside the cabin box lives in one group so it can be switched off.
+    const airframeGroup = new THREE.Group();
+    root.add(airframeGroup);
+    const addSolid = (m: THREE.Mesh) => { m.castShadow = true; airframeGroup.add(m); return m; };
     const noseLen = af.noseToCabinFrontIn * S;
     const tailLen = Math.max((af.overallLengthIn - af.noseToCabinFrontIn - ac.cabinLength) * S, W * 1.2);
     const bodyR = shell.rx, bodyRy = shell.ry, cy = shell.cy;
@@ -317,7 +323,7 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
     // Windshield band
     const wind = new THREE.Mesh(new THREE.BoxGeometry(cockpitLen * 0.45, bodyRy * 0.28, bodyR * 1.9), glass);
     wind.position.set(-L / 2 - cockpitLen * 0.6, cy + bodyRy * 0.42, 0);
-    root.add(wind);
+    airframeGroup.add(wind);
     // Tail cone, upswept toward the stabilizer
     const tail = addSolid(new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), skinSolid));
     tail.scale.set(bodyRy, tailLen, bodyR);
@@ -345,7 +351,7 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
     for (const dir of [1, -1] as const) {
       const w = new THREE.Mesh(planform(dir), wingMat);
       w.position.set(wingX, wingY, 0);
-      root.add(w);
+      airframeGroup.add(w);
       if (af.wingStrut) {
         const sx = wingX + rootChord * 0.1, sz = dir * halfSpan * 0.45;
         const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1, 8), dark);
@@ -353,7 +359,7 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
         strut.position.copy(from).lerp(to, 0.5);
         strut.scale.y = from.distanceTo(to);
         strut.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
-        root.add(strut);
+        airframeGroup.add(strut);
       }
     }
     // Engines
@@ -367,13 +373,13 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
         const disc = new THREE.Mesh(new THREE.CircleGeometry(bodyR * 0.85, 32), propDisc);
         disc.rotation.y = Math.PI / 2;
         disc.position.set(wingX - rootChord * 0.85, wingY + bodyR * 0.1, nz);
-        root.add(disc);
+        airframeGroup.add(disc);
       }
     } else if (af.engines === "nose-prop") {
       const disc = new THREE.Mesh(new THREE.CircleGeometry(bodyRy * 1.05, 32), propDisc);
       disc.rotation.y = Math.PI / 2;
       disc.position.set(-L / 2 - noseLen - 0.05, cy, 0);
-      root.add(disc);
+      airframeGroup.add(disc);
     } else {
       for (const dir of [1, -1] as const) {
         const pod = addSolid(new THREE.Mesh(new THREE.CapsuleGeometry(bodyR * 0.32, W * 0.9, 6, 16), skinSolid));
@@ -394,12 +400,12 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
     for (const [x, z] of [[-L / 2 - noseLen * 0.55, 0], [mainX, W * 0.55], [mainX, -W * 0.55]]) {
       const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, legLen, 8), dark);
       leg.position.set(x, GROUND + legLen / 2, z);
-      root.add(leg);
+      airframeGroup.add(leg);
       const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.14, 16), dark);
       wheel.rotation.x = Math.PI / 2;
       wheel.position.set(x, GROUND + 0.22, z);
       wheel.castShadow = true;
-      root.add(wheel);
+      airframeGroup.add(wheel);
     }
     const coneMat = skinSolid;
     // Door folded down from the sill, airstair style, so it's out of the way
@@ -607,6 +613,7 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
         );
       }
 
+      airframeGroup.visible = airframeRef.current;
       controls.update();
       renderer.render(scene, camera);
       raf = requestAnimationFrame(render);
@@ -643,7 +650,12 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
 
   return (
     <div className="space-y-2 print:hidden">
-      <div ref={mountRef} className="w-full overflow-hidden rounded-lg border bg-[#f3efe6]" aria-label="3D loading animation" />
+      <div className="relative">
+        <div ref={mountRef} className="w-full overflow-hidden rounded-lg border bg-[#f3efe6]" aria-label="3D loading animation" />
+        <div className="pointer-events-none absolute left-3 top-2 rounded bg-black/55 px-2 py-1 text-xs font-semibold text-white">
+          {ac.name} · {geo.door.side === "left" ? "left" : "right"} side · cabin box {ac.cabinLength}×{Math.round(floorWidth(ac))}×{ac.cabinHeight} in
+        </div>
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" className="h-8" onClick={() => setPlaying((p) => !p)} aria-label={playing ? "Pause" : "Play"}>
@@ -654,6 +666,10 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
           </Button>
           <span className={cn("text-muted-foreground", status.includes("won't") && "text-destructive")}>{status}</span>
         </div>
+        <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+          <input type="checkbox" checked={showAirframe} onChange={(e) => setShowAirframe(e.target.checked)} className="h-3.5 w-3.5" />
+          Airframe (approximate shape)
+        </label>
         <span className="text-xs text-muted-foreground">
           {Math.min(stepIdx + 1, steps.length)}/{steps.length} · {geo.door.side === "left" ? "LH" : "RH"} {geo.door.type} door, sill {sillIn}"{geo.door.approx ? " (approx)" : ""} · drag to orbit
         </span>

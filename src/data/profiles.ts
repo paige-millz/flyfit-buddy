@@ -49,7 +49,10 @@ export interface AircraftProfile {
   /** Usable width at floor level; the spec's cabinWidth is the max width higher up. */
   floorWidthIn?: number;
   doors: DoorSpec[];
+  /** Seat map. Only drawn and used as floor obstacles when `seatsVerified` is true. */
   seats: SeatSpec[];
+  /** True when the seat stations come from a W&B manual or interior drawing, not inferred. */
+  seatsVerified?: boolean;
   airframe: AirframeSpec;
   sources: string[];
   notes?: string;
