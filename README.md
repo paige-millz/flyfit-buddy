@@ -4,8 +4,13 @@
 
 Built for [OnFly Air](https://onflyair.com), our on-demand air charter brokerage, to streamline cargo planning for brokers who need fast answers on whether a shipment will work on a given aircraft.
 
+**Live: [paige-millz.github.io/flyfit-buddy](https://paige-millz.github.io/flyfit-buddy/)**
+
 <p align="center">
-  <img src="screenshot.png" alt="FlyFit Buddy — Aircraft Selection & Cargo Fit Check" width="700"/>
+  <img src="docs/loading-scene.png" alt="3D loading sequence: a crate going through the airstair door of a King Air 200" width="820"/>
+</p>
+<p align="center">
+  <img src="docs/app.png" alt="Fleet ranking with GO / CHECK / NO-GO per aircraft and the reason for each" width="820"/>
 </p>
 
 ---
@@ -52,6 +57,8 @@ npm run dev      # http://localhost:8080
 npm test         # fit engine tests
 npm run build    # static site in dist/
 ```
+
+Deploys to GitHub Pages on every push to `main` (`.github/workflows/deploy.yml`). The build sets `VITE_BASE=/flyfit-buddy/` so the app works under the repo sub-path; set it to `/` (or leave it unset) for a root-domain host.
 
 ---
 
