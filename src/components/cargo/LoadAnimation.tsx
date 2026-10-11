@@ -4,7 +4,8 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { Pause, Play, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Aircraft } from "@/data/aircraft";
-import { DOOR_POS_FRAC, type FitResult } from "@/lib/fit";
+import { floorWidth, type FitResult } from "@/lib/fit";
+import { geometryFor } from "@/data/profiles";
 import { cn } from "@/lib/utils";
 import { itemColor } from "./colors";
 
@@ -26,8 +27,6 @@ const S = 0.1;
 const UNIT_SECONDS = 4.4;
 const FAIL_SECONDS = 2.8;
 
-const SILL_IN: Record<Aircraft["category"], number> = { Piston: 26, Turboprop: 40, Jet: 44, Other: 36 };
-const HIGH_WING = new Set(["caravan-208"]);
 
 interface Step {
   label: string;
@@ -214,59 +213,69 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
 
   const steps = useMemo(() => buildSteps(result), [result]);
   const ac = result.aircraft;
-  const sillIn = SILL_IN[ac.category];
+  const geo = useMemo(() => geometryFor(ac), [ac]);
+  const sillIn = geo.door.sillIn;
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    const L = ac.cabinLength * S, W = ac.cabinWidth * S, H = ac.cabinHeight * S;
+    const L = ac.cabinLength * S, W = floorWidth(ac) * S, H = ac.cabinHeight * S;
     const DW = ac.doorWidth * S, DH = ac.doorHeight * S;
-    const doorX = -L / 2 + L * DOOR_POS_FRAC;
+    const doorX = -L / 2 + geo.door.stationIn * S;
     const GROUND = -sillIn * S;
-    const highWing = HIGH_WING.has(ac.id);
+    const af = geo.airframe;
+    // Engine frame: nose at −X, door wall at +Z. A left-hand door means we're looking at
+    // the aircraft's left side, nose to the viewer's right: mirror the whole scene in X.
+    const mirror = geo.door.side === "left" ? -1 : 1;
+    const root = new THREE.Group();
+    root.scale.x = mirror;
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 400);
-    camera.position.set(doorX + L * 0.5, H * 2.4, W * 4.6);
+    scene.add(root);
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 600);
+    // Frame the whole airframe from the door side, three-quarter from above.
+    const viewDist = Math.min(90, Math.max(W * 5, af.overallLengthIn * S * 0.8));
+    camera.position.set(mirror * (doorX * 0.3 + viewDist * 0.35), viewDist * 0.5, viewDist * 0.85);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     mount.appendChild(renderer.domElement);
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(doorX + L * 0.12, 0.2, 0);
+    controls.target.set(mirror * doorX * 0.4, 0.4, 0);
     controls.enableDamping = true;
     controls.maxPolarAngle = Math.PI / 2 - 0.03;
     controls.minDistance = 4;
-    controls.maxDistance = 90;
+    controls.maxDistance = 160;
 
     scene.add(new THREE.HemisphereLight(0xfff6e8, 0x8a7a5a, 0.9));
     const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-    sun.position.set(L * 0.8, H * 5, W * 3);
+    sun.position.set(mirror * L * 0.8, H * 5, W * 3);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     const sc = sun.shadow.camera as THREE.OrthographicCamera;
-    sc.left = -L * 1.4; sc.right = L * 1.4; sc.top = L; sc.bottom = -L; sc.far = 120;
+    const span = Math.max(af.overallLengthIn, af.wingspanIn) * S;
+    sc.left = -span * 0.7; sc.right = span * 0.7; sc.top = span * 0.7; sc.bottom = -span * 0.7; sc.far = 160;
     scene.add(sun);
 
     // Ramp
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(200, 200),
+      new THREE.PlaneGeometry(240, 240),
       new THREE.MeshStandardMaterial({ color: 0xd9d4c8, roughness: 1 }),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = GROUND;
     ground.receiveShadow = true;
-    scene.add(ground);
-    const grid = new THREE.GridHelper(200, 100, 0xc4beb0, 0xc4beb0);
+    root.add(ground);
+    const grid = new THREE.GridHelper(240, 120, 0xc4beb0, 0xc4beb0);
     grid.position.y = GROUND + 0.005;
     (grid.material as THREE.Material).transparent = true;
     (grid.material as THREE.Material).opacity = 0.5;
-    scene.add(grid);
+    root.add(grid);
 
-    // Fuselage
+    // Cabin section of the fuselage, with the door cut from the skin
     const shell = fuselageShell(L, W, H, doorX, DW, DH);
     const skinMat = new THREE.MeshPhysicalMaterial({
       color: 0xf2efe8, roughness: 0.35, metalness: 0.15, transparent: true, opacity: 0.24, side: THREE.DoubleSide,
@@ -274,61 +283,125 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
     });
     const skin = new THREE.Mesh(shell.geometry, skinMat);
     skin.castShadow = true;
-    scene.add(skin);
+    root.add(skin);
     const floor = new THREE.Mesh(new THREE.BoxGeometry(L, 0.06, W), new THREE.MeshStandardMaterial({ color: 0x6f6350, roughness: 0.9 }));
     floor.position.y = -0.03;
     floor.receiveShadow = true;
-    scene.add(floor);
-    // Bulkheads at the ends of the cabin box
+    root.add(floor);
     const bulkMat = new THREE.MeshStandardMaterial({ color: 0xbdb3a0, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
     for (const x of [-L / 2, L / 2]) {
       const b = new THREE.Mesh(new THREE.PlaneGeometry(W, H), bulkMat);
       b.rotation.y = Math.PI / 2;
       b.position.set(x, H / 2, 0);
-      scene.add(b);
+      root.add(b);
     }
-    // Nose and tail cones
-    const coneMat = new THREE.MeshStandardMaterial({ color: 0xe9e4da, roughness: 0.4, metalness: 0.15 });
-    const nose = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), coneMat);
-    nose.scale.set(shell.ry, W * 0.95, shell.rx);
+
+    // Airframe around the cabin, from the type profile (or class defaults)
+    const skinSolid = new THREE.MeshStandardMaterial({ color: 0xe9e4da, roughness: 0.4, metalness: 0.15 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x3a3630, roughness: 0.8 });
+    const glass = new THREE.MeshStandardMaterial({ color: 0x2b3a4a, roughness: 0.2, metalness: 0.4 });
+    const addSolid = (m: THREE.Mesh) => { m.castShadow = true; root.add(m); return m; };
+    const noseLen = af.noseToCabinFrontIn * S;
+    const tailLen = Math.max((af.overallLengthIn - af.noseToCabinFrontIn - ac.cabinLength) * S, W * 1.2);
+    const bodyR = shell.rx, bodyRy = shell.ry, cy = shell.cy;
+    // Nose: cockpit section, then a cone to the tip
+    const cockpitLen = Math.min(noseLen * 0.45, W * 1.1);
+    const cockpit = addSolid(new THREE.Mesh(new THREE.CylinderGeometry(bodyR * 0.98, bodyR, cockpitLen, 32), skinSolid));
+    cockpit.scale.y = 1; cockpit.rotation.z = Math.PI / 2;
+    cockpit.scale.set(1, 1, bodyRy / bodyR);
+    cockpit.position.set(-L / 2 - cockpitLen / 2, cy, 0);
+    const nose = addSolid(new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), skinSolid));
+    nose.scale.set(bodyRy * 0.98, noseLen - cockpitLen, bodyR * 0.98);
     nose.rotation.z = Math.PI / 2;
-    nose.position.set(-L / 2, shell.cy, 0);
-    nose.castShadow = true;
-    scene.add(nose);
-    const tail = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), coneMat);
-    tail.scale.set(shell.ry, L * 0.55, shell.rx);
+    nose.position.set(-L / 2 - cockpitLen, cy, 0);
+    // Windshield band
+    const wind = new THREE.Mesh(new THREE.BoxGeometry(cockpitLen * 0.45, bodyRy * 0.28, bodyR * 1.9), glass);
+    wind.position.set(-L / 2 - cockpitLen * 0.6, cy + bodyRy * 0.42, 0);
+    root.add(wind);
+    // Tail cone, upswept toward the stabilizer
+    const tail = addSolid(new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), skinSolid));
+    tail.scale.set(bodyRy, tailLen, bodyR);
     tail.rotation.z = -Math.PI / 2;
-    tail.position.set(L / 2, shell.cy, 0);
-    tail.castShadow = true;
-    scene.add(tail);
-    // Wing, stabilizers, fin
-    // Wings are drawn see-through and don't shade the cabin: the load is the point of the scene.
-    const wingMat = new THREE.MeshStandardMaterial({ color: 0xe9e4da, roughness: 0.4, transparent: true, opacity: 0.3, depthWrite: false });
-    const wingY = highWing ? shell.cy + shell.ry * 0.98 : shell.cy - shell.ry * 0.75;
-    const wing = new THREE.Mesh(new THREE.BoxGeometry(W * 0.7, 0.08, L * 2.1), wingMat);
-    wing.position.set(doorX + (highWing ? L * 0.42 : L * 0.28), wingY, 0);
-    scene.add(wing);
-    const hstab = new THREE.Mesh(new THREE.BoxGeometry(W * 0.45, 0.06, L * 0.75), coneMat);
-    hstab.position.set(L / 2 + L * 0.42, shell.cy + 0.2, 0);
-    hstab.castShadow = true;
-    scene.add(hstab);
-    const fin = new THREE.Mesh(new THREE.BoxGeometry(W * 0.5, H * 0.9, 0.06), coneMat);
-    fin.position.set(L / 2 + L * 0.42, shell.cy + shell.ry * 0.9, 0);
-    fin.castShadow = true;
-    scene.add(fin);
+    tail.position.set(L / 2, cy + bodyRy * 0.1, 0);
+    const tailX = L / 2 + tailLen * 0.9;
+    // Wing: tapered planform, swept for jets, strutted when high-wing
+    const wingMat = new THREE.MeshStandardMaterial({ color: 0xe3ded3, roughness: 0.4, transparent: true, opacity: 0.5, depthWrite: false });
+    const halfSpan = (af.wingspanIn * S) / 2;
+    const rootChord = Math.max(W * 1.1, halfSpan * 0.3), tipChord = rootChord * 0.45;
+    const sweep = af.wingSweep === "swept" ? 0.55 : af.wingSweep === "moderate" ? 0.3 : 0.08;
+    const planform = (dir: 1 | -1) => {
+      const sh = new THREE.Shape();
+      sh.moveTo(-rootChord / 2, 0);
+      sh.lineTo(rootChord / 2, 0);
+      sh.lineTo(rootChord / 2 + halfSpan * sweep - tipChord * 0.2, dir * halfSpan);
+      sh.lineTo(rootChord / 2 + halfSpan * sweep - tipChord * 1.2, dir * halfSpan);
+      sh.closePath();
+      const g = new THREE.ExtrudeGeometry(sh, { depth: 0.1, bevelEnabled: false });
+      g.rotateX(-Math.PI / 2);
+      return g;
+    };
+    const wingX = -L / 2 + L * (af.engines === "aft-jets" ? 0.62 : af.wing === "high" ? 0.3 : 0.4);
+    const wingY = af.wing === "high" ? cy + bodyRy * 1.02 : af.wing === "mid" ? cy : cy - bodyRy * 0.85;
+    for (const dir of [1, -1] as const) {
+      const w = new THREE.Mesh(planform(dir), wingMat);
+      w.position.set(wingX, wingY, 0);
+      root.add(w);
+      if (af.wingStrut) {
+        const sx = wingX + rootChord * 0.1, sz = dir * halfSpan * 0.45;
+        const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1, 8), dark);
+        const from = new THREE.Vector3(sx, cy - bodyRy * 0.6, dir * bodyR * 0.9), to = new THREE.Vector3(sx, wingY - 0.05, sz);
+        strut.position.copy(from).lerp(to, 0.5);
+        strut.scale.y = from.distanceTo(to);
+        strut.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
+        root.add(strut);
+      }
+    }
+    // Engines
+    const propDisc = new THREE.MeshStandardMaterial({ color: 0x555050, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false });
+    if (af.engines === "wing-props") {
+      for (const dir of [1, -1] as const) {
+        const nz = dir * halfSpan * 0.32;
+        const nac = addSolid(new THREE.Mesh(new THREE.CapsuleGeometry(bodyR * 0.3, rootChord * 1.1, 6, 16), skinSolid));
+        nac.rotation.z = Math.PI / 2;
+        nac.position.set(wingX - rootChord * 0.15, wingY + bodyR * 0.1, nz);
+        const disc = new THREE.Mesh(new THREE.CircleGeometry(bodyR * 0.85, 32), propDisc);
+        disc.rotation.y = Math.PI / 2;
+        disc.position.set(wingX - rootChord * 0.85, wingY + bodyR * 0.1, nz);
+        root.add(disc);
+      }
+    } else if (af.engines === "nose-prop") {
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(bodyRy * 1.05, 32), propDisc);
+      disc.rotation.y = Math.PI / 2;
+      disc.position.set(-L / 2 - noseLen - 0.05, cy, 0);
+      root.add(disc);
+    } else {
+      for (const dir of [1, -1] as const) {
+        const pod = addSolid(new THREE.Mesh(new THREE.CapsuleGeometry(bodyR * 0.32, W * 0.9, 6, 16), skinSolid));
+        pod.rotation.z = Math.PI / 2;
+        pod.position.set(L / 2 + tailLen * 0.2, cy + bodyRy * 0.35, dir * (bodyR + bodyR * 0.45));
+      }
+    }
+    // Tail surfaces
+    const finH = H * (af.tail === "T" ? 1.1 : 0.9);
+    const fin = addSolid(new THREE.Mesh(new THREE.BoxGeometry(W * 0.6, finH, 0.06), skinSolid));
+    fin.position.set(tailX, cy + bodyRy * 0.3 + finH / 2, 0);
+    const stabY = af.tail === "T" ? cy + bodyRy * 0.3 + finH : af.tail === "cruciform" ? cy + bodyRy * 0.3 + finH * 0.5 : cy + bodyRy * 0.3;
+    const hstab = addSolid(new THREE.Mesh(new THREE.BoxGeometry(W * 0.5, 0.06, halfSpan * 0.75), skinSolid));
+    hstab.position.set(tailX + (af.tail === "T" ? W * 0.1 : 0), stabY, 0);
     // Gear
-    const gearMat = new THREE.MeshStandardMaterial({ color: 0x3a3630, roughness: 0.8 });
-    const legLen = shell.cy - shell.ry - GROUND;
-    for (const [x, z] of [[-L / 2 + 0.6, 0], [doorX + L * 0.28, W * 0.45], [doorX + L * 0.28, -W * 0.45]]) {
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, legLen, 8), gearMat);
+    const legLen = cy - bodyRy - GROUND;
+    const mainX = af.wing === "high" ? -L / 2 + L * 0.35 : wingX + rootChord * 0.2;
+    for (const [x, z] of [[-L / 2 - noseLen * 0.55, 0], [mainX, W * 0.55], [mainX, -W * 0.55]]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, legLen, 8), dark);
       leg.position.set(x, GROUND + legLen / 2, z);
-      scene.add(leg);
-      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.14, 16), gearMat);
+      root.add(leg);
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.14, 16), dark);
       wheel.rotation.x = Math.PI / 2;
       wheel.position.set(x, GROUND + 0.22, z);
       wheel.castShadow = true;
-      scene.add(wheel);
+      root.add(wheel);
     }
+    const coneMat = skinSolid;
     // Door folded down from the sill, airstair style, so it's out of the way
     const panel = new THREE.Mesh(new THREE.BoxGeometry(DW, DH, 0.04), coneMat);
     const hinge = new THREE.Group();
@@ -338,7 +411,7 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
     hinge.add(panel);
     const drop = Math.min(DH, -GROUND);
     hinge.rotation.x = Math.PI / 2 + Math.asin(Math.min(1, drop / DH)) * 0.98;
-    scene.add(hinge);
+    root.add(hinge);
     // Seats the engine modeled as obstacles (same layout the floor plan draws).
     const seatMat = new THREE.MeshStandardMaterial({ color: 0xa3957f, roughness: 0.9, transparent: true, opacity: 0.9 });
     for (const st of result.layout.seats) {
@@ -353,14 +426,14 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
       g.add(cushion, back, base);
       g.children.forEach((m) => (m.castShadow = true));
       g.position.set(-L / 2 + (st.x + st.w / 2) * S, 0, -W / 2 + (st.y + st.h / 2) * S);
-      scene.add(g);
+      root.add(g);
     }
     const frameMat = new THREE.MeshStandardMaterial({ color: 0x2f6fb3 });
     const bar = 0.05;
     for (const [w, h, x, y] of [[bar, DH, doorX - DW / 2, DH / 2], [bar, DH, doorX + DW / 2, DH / 2], [DW + bar, bar, doorX, DH], [DW + bar, bar, doorX, 0]]) {
       const mm = new THREE.Mesh(new THREE.BoxGeometry(w, h, bar * 1.5), frameMat);
       mm.position.set(x, y, W / 2);
-      scene.add(mm);
+      root.add(mm);
     }
 
     // Cargo boxes at real size. Local axes = door orientation: X across, Y up, Z through.
@@ -373,7 +446,7 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
       m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x1a1612 })));
       m.castShadow = true;
       m.visible = false;
-      scene.add(m);
+      root.add(m);
       return m;
     });
 
@@ -564,7 +637,7 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
       });
       mount.removeChild(renderer.domElement);
     };
-  }, [steps, ac, sillIn, result.layout.seats]);
+  }, [steps, ac, geo, sillIn, result.layout.seats]);
 
   if (steps.length === 0) return null;
 
@@ -582,7 +655,7 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
           <span className={cn("text-muted-foreground", status.includes("won't") && "text-destructive")}>{status}</span>
         </div>
         <span className="text-xs text-muted-foreground">
-          {Math.min(stepIdx + 1, steps.length)}/{steps.length} · sill {sillIn}" (assumed) · drag to orbit
+          {Math.min(stepIdx + 1, steps.length)}/{steps.length} · {geo.door.side === "left" ? "LH" : "RH"} {geo.door.type} door, sill {sillIn}"{geo.door.approx ? " (approx)" : ""} · drag to orbit
         </span>
       </div>
     </div>

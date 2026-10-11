@@ -1,4 +1,5 @@
 import type { Aircraft, CargoItem } from "@/data/aircraft";
+import { geometryFor } from "@/data/profiles";
 
 /**
  * Cargo fit engine. Pure functions, no React.
@@ -48,8 +49,20 @@ export interface ItemCheck {
 export const SEAT_WIDTH_IN = 18;
 export const SEAT_DEPTH_IN = 20;
 export const SEAT_PITCH_IN = 30;
-/** Fraction of cabin length from the nose to the door center (not in the specs). */
-export const DOOR_POS_FRAC = 0.3;
+/** Door center, inches aft of the cabin front: from the type profile, else a class default. */
+export const doorStation = (ac: Aircraft) => geometryFor(ac).door.stationIn;
+/** Usable floor width: the profile's floor width when known, else the spec's cabin width. */
+export const floorWidth = (ac: Aircraft) => geometryFor(ac).floorWidthIn;
+/** The opening cargo actually goes through (the profile's cargo door when it has one). */
+export const cargoDoor = (ac: Aircraft) => {
+  const d = geometryFor(ac).door;
+  return { width: d.widthIn, height: d.heightIn, side: d.side, type: d.type, station: d.stationIn, sill: d.sillIn, approx: !!d.approx };
+};
+/** Seats that can come out: from the profile's seat map when it has one. */
+export const removableSeatCount = (ac: Aircraft) => {
+  const p = geometryFor(ac).profile;
+  return p?.seats.length ? p.seats.filter((st) => st.removable).length : ac.removableSeats;
+};
 
 /** A seat on the floor, cabin coordinates: x from the nose, y from the wall opposite the door. */
 export interface Seat {
@@ -63,14 +76,29 @@ export interface Seat {
 }
 
 /**
- * Assumed cabin arrangement: one seat per side per row at SEAT_PITCH_IN, skipping the
- * door bay on the door side. The removable ones are those nearest the door on the far
- * side first (the swing zone), then nearest the door on the door side.
+ * Seats on the floor. From the type profile when it has one (stations and sides from
+ * public layouts); otherwise an assumed arrangement: one seat per side per row at
+ * SEAT_PITCH_IN, skipping the door bay. Removable seats in the assumed layout are the
+ * ones nearest the door on the far side first (the swing zone), then on the door side.
  */
 export function seatLayout(ac: Aircraft): Seat[] {
-  const L = ac.cabinLength, W = ac.cabinWidth;
-  const doorX = L * DOOR_POS_FRAC;
-  const bay = ac.doorWidth / 2 + SEAT_DEPTH_IN / 2 + 2;
+  const L = ac.cabinLength, W = floorWidth(ac);
+  const geo = geometryFor(ac);
+  const doorX = geo.door.stationIn;
+  if (geo.profile?.seats.length) {
+    return geo.profile.seats.map((st) => {
+      const far = st.side !== geo.door.side;
+      return {
+        x: st.stationIn - SEAT_DEPTH_IN / 2,
+        y: far ? 1 : W - 1 - SEAT_WIDTH_IN,
+        w: SEAT_DEPTH_IN,
+        h: SEAT_WIDTH_IN,
+        far,
+        removable: st.removable,
+      };
+    });
+  }
+  const bay = cargoDoor(ac).width / 2 + SEAT_DEPTH_IN / 2 + 2;
   const seats: Seat[] = [];
   for (let x = 14; x + SEAT_DEPTH_IN <= L - 6 && seats.length < ac.seats; x += SEAT_PITCH_IN) {
     seats.push({ x, y: 1, w: SEAT_DEPTH_IN, h: SEAT_WIDTH_IN, far: true, removable: false });
@@ -128,16 +156,16 @@ export function checkTurn(item: CargoItem, orient: [number, number], ac: Aircraf
   const c = opts.clearance;
   const [across, up] = orient;
   const through = (item.length * item.width * item.height) / (across * up);
-  const W = ac.cabinWidth - c;
+  const W = floorWidth(ac) - c;
   const needed = through > W;
-  const g = turnGeometry(through, across, ac.doorWidth - c);
+  const g = turnGeometry(through, across, cargoDoor(ac).width - c);
   // Swing toward whichever end of the cabin has more room.
-  const doorX = ac.cabinLength * DOOR_POS_FRAC;
+  const doorX = doorStation(ac);
   const aftRoom = ac.cabinLength - doorX, fwdRoom = doorX;
   const aft = aftRoom >= fwdRoom;
   const roomOk = g.reach <= Math.max(aftRoom, fwdRoom) - c;
   // Seats on the far wall inside the zone the leading end sweeps.
-  const zone: [number, number] = aft ? [doorX - across, doorX + g.reach] : [doorX - g.reach, doorX + across];
+  const zone: [number, number] = aft ? [doorX - across / 2, doorX + g.reach] : [doorX - g.reach, doorX + across / 2];
   const inZone = seatLayout(ac).filter((st) => st.far && st.x + st.w > zone[0] && st.x < zone[1]);
   const okSeatsIn = roomOk && (g.widthNeeded <= W - (inZone.length ? SEAT_WIDTH_IN : 0));
   const seatsToPull = okSeatsIn ? 0 : inZone.length;
@@ -203,8 +231,9 @@ const sortAsc = (a: number[]) => [...a].sort((x, y) => x - y);
 
 /** Can the item pass through the door? Returns the cross-section used, or null. */
 export function doorFit(item: CargoItem, ac: Aircraft, clearance = 0): [number, number] | null {
-  const dw = ac.doorWidth - clearance;
-  const dh = ac.doorHeight - clearance;
+  const door = cargoDoor(ac);
+  const dw = door.width - clearance;
+  const dh = door.height - clearance;
   if (item.upright) {
     // Height stays vertical; either L or W goes across the door.
     for (const across of sortAsc([item.length, item.width])) {
@@ -238,7 +267,7 @@ export function calcPayload(items: CargoItem[], ac: Aircraft, opts: PlanOptions)
   const cargoWeight = items.reduce((s, i) => s + i.weight * i.quantity, 0);
   const crewWeight = opts.mechanics * opts.mechanicWeight + (opts.mechanics > 0 ? opts.toolWeight : 0);
   const required = cargoWeight + crewWeight;
-  const seatCredit = opts.removeSeats ? ac.removableSeats * ac.seatWeight : 0;
+  const seatCredit = opts.removeSeats ? removableSeatCount(ac) * ac.seatWeight : 0;
   const available = ac.maxPayload + seatCredit;
   const margin = available - required;
   const pct = available > 0 ? (required / available) * 100 : 0;
@@ -266,7 +295,7 @@ function footprints(item: CargoItem, maxZ: number): { w: number; h: number; z: n
  */
 export function layoutFloor(items: CargoItem[], ac: Aircraft, clearance = 0, seats: Seat[] = []): LayoutResult {
   const L = Math.max(0, ac.cabinLength - clearance);
-  const W = Math.max(0, ac.cabinWidth - clearance);
+  const W = Math.max(0, floorWidth(ac) - clearance);
   const H = ac.cabinHeight - clearance;
 
   const units = items.flatMap((item, colorIndex) =>
@@ -370,8 +399,8 @@ export function evaluate(items: CargoItem[], ac: Aircraft, opts: PlanOptions): F
     if (t.okSeatsOut) continue; // reported as a soft note below
     hard.push(
       t.widthNeeded > ac.cabinWidth - c
-        ? `${x.item.name} can't make the turn from the door: the swing needs ${fmt(t.widthNeeded)}" across, cabin is ${fmt(ac.cabinWidth - c)}"`
-        : t.reach > Math.max(ac.cabinLength * DOOR_POS_FRAC, ac.cabinLength * (1 - DOOR_POS_FRAC)) - c
+        ? `${x.item.name} can't make the turn from the door: the swing needs ${fmt(t.widthNeeded)}" across, floor is ${fmt(floorWidth(ac) - c)}"`
+        : t.reach > Math.max(doorStation(ac), ac.cabinLength - doorStation(ac)) - c
           ? `${x.item.name} can't make the turn: the swing reaches ${fmt(t.reach)}" down the cabin from the door, more than there is`
           : `${x.item.name} can't make the turn with seats in: ${t.seatsToPull} seat${t.seatsToPull > 1 ? "s" : ""} in the swing zone aren't removable`,
     );

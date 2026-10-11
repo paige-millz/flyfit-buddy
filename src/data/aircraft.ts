@@ -52,7 +52,7 @@ export const AIRCRAFT_DB: Aircraft[] = [
   { id: "cheyenne-i", name: "Cheyenne I (PA-31T)", aliases: ["PA-31T", "Chey I"], category: "Turboprop", doorWidth: 28, doorHeight: 46, cabinLength: 101, cabinWidth: 50, cabinHeight: 51.5, maxPayload: 3840, seats: 6, removableSeats: 1, seatWeight: 28 },
   { id: "c404", name: "C404 Titan", aliases: ["Cessna 404", "Titan"], category: "Piston", doorWidth: 25, doorHeight: 52, cabinLength: 177, cabinWidth: 53, cabinHeight: 60, maxPayload: 2765, seats: 8, removableSeats: 2, seatWeight: 20 },
   { id: "c310", name: "C310", aliases: ["Cessna 310"], category: "Piston", doorWidth: 26, doorHeight: 50, cabinLength: 147, cabinWidth: 53, cabinHeight: 48, maxPayload: 1736, seats: 6, removableSeats: 2, seatWeight: 20 },
-  { id: "c319", name: "C319", aliases: [], category: "Other", doorWidth: 28, doorHeight: 50, cabinLength: 180, cabinWidth: 52, cabinHeight: 55, maxPayload: 2000, seats: 8, removableSeats: 0, seatWeight: 30 },
+  { id: "c319", name: "C402 (listed as C319)", aliases: ["C319", "Cessna 402", "C402"], category: "Piston", doorWidth: 28, doorHeight: 50, cabinLength: 180, cabinWidth: 55, cabinHeight: 51, maxPayload: 2095, seats: 8, removableSeats: 6, seatWeight: 30 },
   { id: "c340", name: "C340", aliases: ["Cessna 340"], category: "Piston", doorWidth: 26, doorHeight: 50, cabinLength: 112, cabinWidth: 46.5, cabinHeight: 49, maxPayload: 1848, seats: 6, removableSeats: 2, seatWeight: 20 },
   { id: "aerostar", name: "Aerostar", aliases: ["AEST", "Piper Aerostar"], category: "Piston", doorWidth: 28, doorHeight: 45, cabinLength: 154, cabinWidth: 46, cabinHeight: 47, maxPayload: 2000, seats: 6, removableSeats: 2, seatWeight: 25 },
   { id: "navajo", name: "Navajo (PA-31)", aliases: ["PA-31", "Piper Navajo"], category: "Piston", doorWidth: 24, doorHeight: 43, cabinLength: 131, cabinWidth: 50, cabinHeight: 51, maxPayload: 2070, seats: 8, removableSeats: 2, seatWeight: 20 },
@@ -64,7 +64,7 @@ export const AIRCRAFT_DB: Aircraft[] = [
   { id: "beechjet-400a", name: "Beechjet 400A", aliases: ["BE40", "Hawker 400"], category: "Jet", doorWidth: 29, doorHeight: 50, cabinLength: 187, cabinWidth: 59, cabinHeight: 58, maxPayload: 2085, seats: 11, removableSeats: 0, seatWeight: 50 },
   { id: "learjet-35", name: "Learjet 35", aliases: ["LJ35", "Lear"], category: "Jet", doorWidth: 36, doorHeight: 50, cabinLength: 155, cabinWidth: 59, cabinHeight: 52, maxPayload: 3190, seats: 8, removableSeats: 0, seatWeight: 50 },
   { id: "falcon-10", name: "Falcon 10", aliases: ["FA10", "Dassault"], category: "Jet", doorWidth: 36, doorHeight: 60, cabinLength: 155, cabinWidth: 60, cabinHeight: 58, maxPayload: 1975, seats: 8, removableSeats: 0, seatWeight: 50 },
-  { id: "falcon-20", name: "Falcon 20", aliases: ["FA20", "Dassault"], category: "Jet", doorWidth: 36, doorHeight: 60, cabinLength: 288, cabinWidth: 73, cabinHeight: 67, maxPayload: 1700, seats: 11, removableSeats: 0, seatWeight: 60 },
+  { id: "falcon-20", name: "Falcon 20", aliases: ["FA20", "Dassault"], category: "Jet", doorWidth: 30, doorHeight: 58, cabinLength: 288, cabinWidth: 73, cabinHeight: 67, maxPayload: 1987, seats: 11, removableSeats: 0, seatWeight: 60 },
 ];
 
 export const PARTS_DB: PresetPart[] = [
