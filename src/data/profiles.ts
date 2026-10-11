@@ -19,6 +19,9 @@ export interface DoorSpec {
   /** Door center, inches aft of the forward end of the passenger cabin. */
   stationIn: number;
   sillIn: number;
+  /** How cargo reaches the opening: from the ramp (airstair/low door), by stepping onto the
+   *  wing walk first (over-wing door), or over the wing and down through a canopy. */
+  access?: "ground" | "over-wing" | "canopy";
   approx?: boolean;
 }
 
@@ -221,7 +224,7 @@ export const PROFILES: Record<string, AircraftProfile> = {
     id: "c310",
     model: { file: "c310.glb", name: "Cessna 310" },
     floorWidthIn: 36,
-    doors: [{ role: "main", side: "right", widthIn: 37, heightIn: 36, type: "plug", stationIn: 32, sillIn: 36, approx: true }],
+    doors: [{ role: "main", side: "right", widthIn: 37, heightIn: 36, type: "plug", stationIn: 32, sillIn: 36, access: "over-wing", approx: true }],
     seats: [
       { stationIn: 25, side: "left", facing: "fwd", removable: false }, { stationIn: 25, side: "right", facing: "fwd", removable: false },
       { stationIn: 59, side: "left", facing: "fwd", removable: true }, { stationIn: 59, side: "right", facing: "fwd", removable: true },
@@ -310,7 +313,7 @@ export const PROFILES: Record<string, AircraftProfile> = {
     id: "da-20",
     model: { file: "katana.glb", name: "Diamond DA20 Katana" },
     floorWidthIn: 30,
-    doors: [{ role: "main", side: "left", widthIn: 44, heightIn: 50, type: "upward-hinged", stationIn: 28, sillIn: 28, approx: true }],
+    doors: [{ role: "main", side: "left", widthIn: 44, heightIn: 50, type: "upward-hinged", stationIn: 28, sillIn: 28, access: "canopy", approx: true }],
     seats: [{ stationIn: 25, side: "left", facing: "fwd", removable: false }, { stationIn: 25, side: "right", facing: "fwd", removable: false }],
     airframe: { overallLengthIn: 282, wingspanIn: 428, wing: "low", wingStrut: false, tail: "T", engines: "nose-prop", noseToCabinFrontIn: 60, fuselageMaxWidthIn: 46, gear: "fixed" },
     sources: ["https://www.aopa.org/go-fly/aircraft-and-ownership/aircraft-fact-sheets/diamond-da20"],

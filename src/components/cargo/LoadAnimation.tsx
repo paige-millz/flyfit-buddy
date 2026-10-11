@@ -469,16 +469,23 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
       airframeGroup.add(wheel);
     }
     const coneMat = skinSolid;
-    // Door folded down from the sill, airstair style, so it's out of the way
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(DW, DH, 0.04), coneMat);
-    const hinge = new THREE.Group();
-    hinge.position.set(doorX, 0, W / 2);
-    panel.position.set(0, DH / 2, 0);
-    panel.castShadow = true;
-    hinge.add(panel);
-    const drop = Math.min(DH, -GROUND);
-    hinge.rotation.x = Math.PI / 2 + Math.asin(Math.min(1, drop / DH)) * 0.98;
-    root.add(hinge);
+    const access = geo.door.access ?? "ground";
+    // Canopy opening sits at the cockpit rail, well below the cabin's nominal ceiling.
+    const railY = access === "canopy" ? Math.min(H, Math.max(1.2, H * 0.5)) : H;
+    // Top of the wing walk for over-wing and canopy access: a step below the sill.
+    const wingTopY = GROUND + Math.max(6, sillIn - 10) * S;
+    if (access === "ground") {
+      // Door folded down from the sill, airstair style, so it's out of the way
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(DW, DH, 0.04), coneMat);
+      const hinge = new THREE.Group();
+      hinge.position.set(doorX, 0, W / 2);
+      panel.position.set(0, DH / 2, 0);
+      panel.castShadow = true;
+      hinge.add(panel);
+      const drop = Math.min(DH, -GROUND);
+      hinge.rotation.x = Math.PI / 2 + Math.asin(Math.min(1, drop / DH)) * 0.98;
+      root.add(hinge);
+    }
     // Seats the engine modeled as obstacles (same layout the floor plan draws).
     const seatMat = new THREE.MeshStandardMaterial({ color: 0xa3957f, roughness: 0.9, transparent: true, opacity: 0.9 });
     for (const st of result.layout.seats) {
@@ -495,13 +502,49 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
       g.position.set(-L / 2 + (st.x + st.w / 2) * S, 0, -W / 2 + (st.y + st.h / 2) * S);
       root.add(g);
     }
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x2f6fb3 });
-    const bar = 0.05;
-    for (const [w, h, x, y] of [[bar, DH, doorX - DW / 2, DH / 2], [bar, DH, doorX + DW / 2, DH / 2], [DW + bar, bar, doorX, DH], [DW + bar, bar, doorX, 0]]) {
-      const mm = new THREE.Mesh(new THREE.BoxGeometry(w, h, bar * 1.5), frameMat);
-      mm.position.set(x, y, W / 2);
-      root.add(mm);
+    // The opening itself: a bright frame, a translucent fill, and a label. For a canopy the
+    // opening is in the roof (door width fore-aft, door height across the cockpit).
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0xff7a1a, emissive: 0xff7a1a, emissiveIntensity: 0.55, roughness: 0.4 });
+    const fillMat = new THREE.MeshBasicMaterial({ color: 0xffa64d, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false });
+    const bar = 0.12;
+    const doorGroup = new THREE.Group();
+    if (access === "canopy") {
+      const ow = DW, od = DH; // along x, across z
+      for (const [w, d, x, z] of [[bar, od + bar, doorX - ow / 2, 0], [bar, od + bar, doorX + ow / 2, 0], [ow + bar, bar, doorX, -od / 2], [ow + bar, bar, doorX, od / 2]]) {
+        const mm = new THREE.Mesh(new THREE.BoxGeometry(w, bar, d), frameMat);
+        mm.position.set(x, railY, z);
+        doorGroup.add(mm);
+      }
+      const fill = new THREE.Mesh(new THREE.PlaneGeometry(ow, od), fillMat);
+      fill.rotation.x = -Math.PI / 2;
+      fill.position.set(doorX, railY - 0.01, 0);
+      doorGroup.add(fill);
+    } else {
+      for (const [w, h, x, y] of [[bar, DH + bar, doorX - DW / 2, DH / 2], [bar, DH + bar, doorX + DW / 2, DH / 2], [DW + bar, bar, doorX, DH], [DW + bar, bar, doorX, 0]]) {
+        const mm = new THREE.Mesh(new THREE.BoxGeometry(w, h, bar * 1.6), frameMat);
+        mm.position.set(x, y, W / 2);
+        doorGroup.add(mm);
+      }
+      const fill = new THREE.Mesh(new THREE.PlaneGeometry(DW, DH), fillMat);
+      fill.position.set(doorX, DH / 2, W / 2 + 0.01);
+      doorGroup.add(fill);
     }
+    root.add(doorGroup);
+    // Label as a sprite in scene space (not under the mirrored root, so text reads correctly).
+    const labelCanvas = document.createElement("canvas");
+    labelCanvas.width = 512; labelCanvas.height = 96;
+    const ctx = labelCanvas.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "rgba(20,16,12,0.85)"; ctx.fillRect(0, 0, 512, 96);
+      ctx.fillStyle = "#ffb05c"; ctx.font = "bold 44px Inter, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      const kind = access === "canopy" ? "CANOPY" : access === "over-wing" ? "OVER-WING DOOR" : `${geo.door.type.toUpperCase()} DOOR`;
+      ctx.fillText(`${geo.door.side === "left" ? "LH" : "RH"} ${kind} · ${ac.doorWidth}×${ac.doorHeight} in`, 256, 48);
+    }
+    const labelTex = new THREE.CanvasTexture(labelCanvas);
+    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex, transparent: true, depthTest: false }));
+    label.scale.set(6.4, 1.2, 1);
+    label.position.set(mirror * doorX, access === "canopy" ? railY + 2.2 : DH + 1.3, access === "canopy" ? 0 : W / 2 + 0.6);
+    scene.add(label);
 
     // Cargo boxes at real size. Local axes = door orientation: X across, Y up, Z through.
     const plans = steps.map((s) => planFor(s));
@@ -573,20 +616,30 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
         if (s.door && s.rest && plan) {
           const [across, up, through] = s.door.map((v) => v * S);
           const { yawed, sx } = plan;
-          const startZ = W / 2 + through / 2 + W * 0.8;
           const sillZ = W / 2 + through / 2 + 0.12;
           // Where the unit sits once threaded: along the wall, just inside.
-          const endX = doorX + sx * (yawed ? through / 2 + 0.3 : 0);
-          const endZ = yawed ? 0 : W / 2 - through / 2 - 0.15;
-          const P = [0, 0.16, 0.3, 0.68, plan.needsTip ? 0.84 : 0.68, 1];
-          if (u < P[1]) {
-            // roll up on the ramp
-            const k = ease(u / P[1]);
-            pose(m, doorX, GROUND + up / 2, lerp(startZ, sillZ + 0.6, k));
-          } else if (u < P[2]) {
-            // lift to the sill
-            const k = ease((u - P[1]) / (P[2] - P[1]));
-            pose(m, doorX, lerp(GROUND + up / 2, up / 2, k) + Math.sin(k * Math.PI) * 0.12, lerp(sillZ + 0.6, sillZ, k));
+          const endX = access === "canopy" ? doorX : doorX + sx * (yawed ? through / 2 + 0.3 : 0);
+          const endZ = access === "canopy" || yawed ? 0 : W / 2 - through / 2 - 0.15;
+          // Ingress up to the opening, as a person would carry it:
+          //  ground   – up the ramp to the sill
+          //  over-wing – to the trailing edge, up onto the wing walk, forward beside the door, up to the sill
+          //  canopy   – onto the wing, lifted over the rail, across the opening, lowered to the floor
+          const keys: [number, number, number][] =
+            access === "over-wing"
+              ? [[doorX + 2.5, GROUND + up / 2, W / 2 + 2.4 + through / 2 + 2.5], [doorX + 2.5, GROUND + up / 2, W / 2 + 2.4 + through / 2], [doorX + 2.5, wingTopY + up / 2, W / 2 + 2.4 + through / 2], [doorX, wingTopY + up / 2, sillZ], [doorX, up / 2, sillZ]]
+              : access === "canopy"
+                ? [[doorX, GROUND + up / 2, W / 2 + 2.4 + through / 2 + 2.5], [doorX, GROUND + up / 2, W / 2 + 2.4 + through / 2], [doorX, wingTopY + up / 2, W / 2 + 2.4 + through / 2], [doorX, railY + up / 2 + 0.35, W / 2 + 0.6], [doorX, railY + up / 2 + 0.35, 0], [doorX, up / 2, 0]]
+                : [[doorX, GROUND + up / 2, W / 2 + through / 2 + W * 0.8], [doorX, GROUND + up / 2, sillZ + 0.6], [doorX, up / 2, sillZ]];
+          const canopy = access === "canopy";
+          const P = [0, 0.16, canopy ? 0.45 : 0.3, canopy ? 0.45 : 0.68, plan.needsTip ? (canopy ? 0.7 : 0.84) : canopy ? 0.45 : 0.68, 1];
+          if (u < P[2]) {
+            // walk the ingress keyframes
+            const t = (u / P[2]) * (keys.length - 1);
+            const seg = Math.min(keys.length - 2, Math.floor(t));
+            const k = ease(t - seg);
+            const a = keys[seg], b = keys[seg + 1];
+            const lift = a[1] !== b[1] ? Math.sin(k * Math.PI) * 0.1 : 0;
+            pose(m, lerp(a[0], b[0], k), lerp(a[1], b[1], k) + lift, lerp(a[2], b[2], k));
           } else if (u < P[3]) {
             // Come through the door at the entry angle the turn check found, sliding along the
             // unit's own axis so its chord stays centered in the opening; then, once the tail
