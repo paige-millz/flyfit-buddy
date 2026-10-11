@@ -19,7 +19,7 @@ import { itemColor } from "./colors";
 
 const S = 0.1; // inches → scene units
 const DOOR_X_FRAC = 0.3;
-const UNIT_SECONDS = 2.6;
+const UNIT_SECONDS = 3.2;
 const FAIL_SECONDS = 1.8;
 
 interface Step {
@@ -165,9 +165,10 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
     edges.position.y = H / 2;
     scene.add(edges);
 
-    // Cargo boxes
+    // Cargo boxes at real size. Local axes = door orientation: X across, Y up, Z through.
     const boxes = steps.map((s) => {
-      const geo = new THREE.BoxGeometry(1, 1, 1);
+      const [bx, by, bz] = (s.door ?? s.fail).map((v) => v * S);
+      const geo = new THREE.BoxGeometry(bx, by, bz);
       const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(s.color), roughness: 0.6, metalness: 0.05 });
       const m = new THREE.Mesh(geo, mat);
       const outline = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x1a1612 }));
@@ -186,11 +187,34 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
 
     const totalDur = steps.reduce((t, s) => t + (s.door && s.rest ? UNIT_SECONDS : FAIL_SECONDS), 0);
 
-    const placeBox = (m: THREE.Mesh, cx: number, cy: number, cz: number, w: number, h: number, d: number, rotY = 0) => {
+    const IDENT = new THREE.Quaternion();
+    const place = (m: THREE.Mesh, cx: number, cy: number, cz: number, q: THREE.Quaternion = IDENT) => {
       m.position.set(cx, cy, cz);
-      m.scale.set(Math.max(w, 0.01), Math.max(h, 0.01), Math.max(d, 0.01));
-      m.rotation.y = rotY;
+      m.quaternion.copy(q);
     };
+    // Rigid rotation taking the door orientation (across, up, through) to the rest
+    // footprint (w along X, height along Y, d along Z): a permutation of the box's axes.
+    const restQuat = steps.map((s) => {
+      if (!s.door || !s.rest) return IDENT;
+      const local = [s.door[0], s.door[1], s.door[2]];
+      const target = [s.rest.w / S, s.rest.h / S, s.rest.d / S];
+      const used = [false, false, false];
+      const cols: THREE.Vector3[] = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+      const axes = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)];
+      for (let i = 0; i < 3; i++) {
+        let j = local.findIndex((v, k) => !used[k] && Math.abs(v - target[i]) < 1e-6);
+        if (j < 0) j = used.indexOf(false);
+        used[j] = true;
+        cols[j] = axes[i]; // local axis j lands on world axis i
+      }
+      const mtx = new THREE.Matrix4().makeBasis(cols[0], cols[1], cols[2]);
+      if (mtx.determinant() < 0) {
+        cols[2].negate(); // proper rotation, same extents
+        mtx.makeBasis(cols[0], cols[1], cols[2]);
+      }
+      return new THREE.Quaternion().setFromRotationMatrix(mtx);
+    });
+    const tmpQ = new THREE.Quaternion();
 
     const render = () => {
       const now = performance.now();
@@ -221,7 +245,7 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
           // settled (or failed → hidden)
           if (s.rest) {
             m.visible = true;
-            placeBox(m, s.rest.x, s.rest.y, s.rest.z, s.rest.w, s.rest.h, s.rest.d);
+            place(m, s.rest.x, s.rest.y, s.rest.z, restQuat[i]);
             mat.emissive.setHex(0);
             mat.opacity = 1;
           } else m.visible = false;
@@ -232,38 +256,42 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
           if (s.door && s.rest) {
             const [across, up, through] = s.door.map((v) => v * S) as [number, number, number];
             const startZ = W / 2 + through / 2 + W * 0.9;
-            const doorZ = W / 2;
-            const insideZ = W / 2 - through / 2 - 0.15;
-            if (u < 0.45) {
-              // approach + pass through
-              const k = ease(u / 0.45);
-              placeBox(m, doorX, up / 2, lerp(startZ, insideZ, k), across, up, through);
+            // Clear of the door wall once the turn starts, whatever way it spins.
+            const turnR = Math.max(across, up, through) / 2;
+            const insideZ = Math.max(W / 2 - turnR - 0.1, 0);
+            const turnY = Math.max(up / 2, s.rest.y);
+            const needsTurn = restQuat[i].angleTo(IDENT) > 1e-3;
+            const A = 0.4, B = needsTurn ? 0.72 : 0.4;
+            if (u < A) {
+              // approach and pass through the door on its passing face
+              place(m, doorX, up / 2, lerp(startZ, insideZ, ease(u / A)));
+            } else if (u < B) {
+              // turn as a solid object, carried slightly off the floor
+              const k = ease((u - A) / (B - A));
+              tmpQ.copy(IDENT).slerp(restQuat[i], k);
+              place(m, doorX, lerp(up / 2, turnY, k) + Math.sin(k * Math.PI) * 0.25, insideZ, tmpQ);
             } else {
-              // reorient and slide to rest
-              const k = ease((u - 0.45) / 0.55);
-              placeBox(
-                m,
-                lerp(doorX, s.rest.x, k), lerp(up / 2, s.rest.y, k), lerp(insideZ, s.rest.z, k),
-                lerp(across, s.rest.w, k), lerp(up, s.rest.h, k), lerp(through, s.rest.d, k),
-              );
+              // slide to its floor-plan spot
+              const k = ease((u - B) / (1 - B));
+              place(m, lerp(doorX, s.rest.x, k), lerp(turnY, s.rest.y, k), lerp(insideZ, s.rest.z, k), restQuat[i]);
             }
             mat.emissive.setHex(0);
           } else if (s.door) {
             // fits the door but no floor space: pass through, then fade out just inside
-            const [across, up, through] = s.door.map((v) => v * S) as [number, number, number];
+            const [, up, through] = s.door.map((v) => v * S) as [number, number, number];
             const k = ease(Math.min(u / 0.6, 1));
-            placeBox(m, doorX, up / 2, lerp(W / 2 + through / 2 + W * 0.9, W / 2 - through / 2 - 0.15, k), across, up, through);
+            place(m, doorX, up / 2, lerp(W / 2 + through / 2 + W * 0.9, W / 2 - through / 2 - 0.15, k));
             mat.transparent = true;
             mat.opacity = u > 0.6 ? 1 - (u - 0.6) / 0.4 : 1;
             mat.emissive.setHex(u > 0.6 ? 0x7a5a00 : 0);
           } else {
             // doesn't fit: bump the door with its smallest face, flash red
-            const [a, b, c] = s.fail.map((v) => v * S) as [number, number, number];
+            const [, b, c] = s.fail.map((v) => v * S) as [number, number, number];
             const startZ = W / 2 + c / 2 + W * 0.9;
             const stopZ = W / 2 + c / 2 + 0.05;
             const k = ease(Math.min(u / 0.5, 1));
             const bump = u > 0.5 ? Math.sin((u - 0.5) * Math.PI * 6) * 0.04 : 0;
-            placeBox(m, doorX, b / 2, lerp(startZ, stopZ, k) + bump, a, b, c);
+            place(m, doorX, b / 2, lerp(startZ, stopZ, k) + bump);
             mat.emissive.setHex(u > 0.5 && Math.floor(u * 8) % 2 === 0 ? 0xaa1111 : 0);
           }
         }
