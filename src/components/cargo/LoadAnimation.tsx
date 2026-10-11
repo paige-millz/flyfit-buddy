@@ -298,9 +298,24 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
     if (modelRef) {
       setModelState("loading");
       const url = `${import.meta.env.BASE_URL}models/${modelRef.file}`;
-      new GLTFLoader().load(
-        url,
-        (gltf) => {
+      // Fetch the binary ourselves: hosts that won't serve .glb get a base64 .json twin.
+      const fetchModel = async (): Promise<ArrayBuffer> => {
+        try {
+          const r = await fetch(url);
+          if (r.ok) {
+            const b = await r.arrayBuffer();
+            if (new TextDecoder().decode(b.slice(0, 4)) === "glTF") return b;
+          }
+        } catch { /* fall through */ }
+        const r = await fetch(`${url}.json`);
+        if (!r.ok) throw new Error(`model ${modelRef.file} unavailable`);
+        const { b64 } = (await r.json()) as { b64: string };
+        const bin = atob(b64);
+        const out = new Uint8Array(bin.length);
+        for (let k = 0; k < bin.length; k++) out[k] = bin.charCodeAt(k);
+        return out.buffer;
+      };
+      const onLoaded = (gltf: { scene: THREE.Group }) => {
           if (disposed) return;
           const m = gltf.scene;
           const toScene = 1 / 0.254; // 1 scene unit = 10 in
@@ -328,10 +343,10 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
           modelGroup.add(m);
           root.add(modelGroup);
           setModelState("ready");
-        },
-        undefined,
-        () => { if (!disposed) setModelState("failed"); },
-      );
+      };
+      fetchModel()
+        .then((buf) => new GLTFLoader().parse(buf, "", onLoaded, () => { if (!disposed) setModelState("failed"); }))
+        .catch(() => { if (!disposed) setModelState("failed"); });
     }
     const floor = new THREE.Mesh(new THREE.BoxGeometry(L, 0.06, W), new THREE.MeshStandardMaterial({ color: 0x6f6350, roughness: 0.9 }));
     floor.position.y = -0.03;
