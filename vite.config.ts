@@ -5,6 +5,8 @@ import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  // Set VITE_BASE (e.g. /flyfit-buddy/) when hosting under a sub-path such as GitHub Pages.
+  base: process.env.VITE_BASE ?? "/",
   server: {
     host: "::",
     port: 8080,

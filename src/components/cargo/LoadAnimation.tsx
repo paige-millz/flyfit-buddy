@@ -532,17 +532,17 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
     root.add(doorGroup);
     // Label as a sprite in scene space (not under the mirrored root, so text reads correctly).
     const labelCanvas = document.createElement("canvas");
-    labelCanvas.width = 512; labelCanvas.height = 96;
+    labelCanvas.width = 1024; labelCanvas.height = 96;
     const ctx = labelCanvas.getContext("2d");
     if (ctx) {
-      ctx.fillStyle = "rgba(20,16,12,0.85)"; ctx.fillRect(0, 0, 512, 96);
+      ctx.fillStyle = "rgba(20,16,12,0.85)"; ctx.fillRect(0, 0, 1024, 96);
       ctx.fillStyle = "#ffb05c"; ctx.font = "bold 44px Inter, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       const kind = access === "canopy" ? "CANOPY" : access === "over-wing" ? "OVER-WING DOOR" : `${geo.door.type.toUpperCase()} DOOR`;
-      ctx.fillText(`${geo.door.side === "left" ? "LH" : "RH"} ${kind} · ${ac.doorWidth}×${ac.doorHeight} in`, 256, 48);
+      ctx.fillText(`${geo.door.side === "left" ? "LH" : "RH"} ${kind} · ${ac.doorWidth}×${ac.doorHeight} in`, 512, 48);
     }
     const labelTex = new THREE.CanvasTexture(labelCanvas);
     const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex, transparent: true, depthTest: false }));
-    label.scale.set(6.4, 1.2, 1);
+    label.scale.set(10.5, 1.0, 1);
     label.position.set(mirror * doorX, access === "canopy" ? railY + 2.2 : DH + 1.3, access === "canopy" ? 0 : W / 2 + 0.6);
     scene.add(label);
 
