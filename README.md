@@ -18,6 +18,7 @@ Enter the cargo once. Every aircraft in the fleet gets checked and ranked:
 - **Door clearance** — finds the best cross-section through the door (respects "this side up")
 - **Cabin fit** — any orientation, with a configurable clearance margin
 - **Floor plan** — top-down layout of every unit (quantities expanded), single layer, no stacking
+- **3D loading animation** — each unit flies in through the door in its passing orientation and settles on the floor; units that can't pass stop at the door
 - **Payload** — cargo + mechanics + tools, with optional seat-removal credit
 - **Warnings** — long items that must turn from door into cabin, floor overflow, payload above 90%
 

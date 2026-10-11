@@ -4,6 +4,9 @@ import type { FitResult } from "@/lib/fit";
 import { cn } from "@/lib/utils";
 import { itemColor } from "./colors";
 import VerdictBadge from "./VerdictBadge";
+import { lazy, Suspense } from "react";
+
+const LoadAnimation = lazy(() => import("./LoadAnimation"));
 
 const n = (v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 1 });
 
@@ -85,6 +88,13 @@ const AircraftDetail = ({ result, clearance }: { result: FitResult; clearance: n
               tone={payload.pass ? "good" : "bad"}
             />
           </div>
+        </Section>
+
+        {/* 3D load */}
+        <Section title="Loading sequence (3D)" aside="door placed ⅓ back; position not in the data">
+          <Suspense fallback={<div className="h-64 animate-pulse rounded-lg border bg-secondary/40" />}>
+            <LoadAnimation result={result} />
+          </Suspense>
         </Section>
 
         {/* Door */}
