@@ -17,7 +17,7 @@ Enter the cargo once. Every aircraft in the fleet gets checked and ranked:
 - **GO / CHECK / NO-GO per aircraft** — workable options first, smallest capable airframe first
 - **Door clearance** — finds the best cross-section through the door (respects "this side up")
 - **Cabin fit** — any orientation, with a configurable clearance margin
-- **Floor plan** — top-down layout of every unit (quantities expanded), single layer, no stacking
+- **Floor plan** — top-down layout of every unit (quantities expanded), single layer, no stacking, working around the seats still installed
 - **3D loading sequence** — fuselage with the door cut in, airstair down, seats in place; each unit comes up the ramp, lifts to the sill, enters at its computed angle, swings about its trailing end into the cabin, and slides to its spot. Units that can't pass are offered up and bump the opening.
 - **Payload** — cargo + mechanics + tools, with optional seat-removal credit
 - **Turn into the cabin** — plan-view geometry of the swing from a side door: the entry angle the door chord allows, the cabin width the swing needs, and how many seats in the swing zone have to come out (checked against the removable count)
