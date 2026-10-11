@@ -26,7 +26,7 @@ const verdictCopy = {
   "no-go": "Won't work on this aircraft as loaded.",
 };
 
-const AircraftDetail = ({ result, clearance, seatsOut }: { result: FitResult; clearance: number; seatsOut: boolean }) => {
+const AircraftDetail = ({ result, clearance }: { result: FitResult; clearance: number }) => {
   const { aircraft: ac, verdict, reasons, checks, payload, layout } = result;
 
   return (
@@ -93,7 +93,7 @@ const AircraftDetail = ({ result, clearance, seatsOut }: { result: FitResult; cl
         {/* 3D load */}
         <Section title="Loading sequence (3D)" aside="door placed ⅓ back; position not in the data">
           <Suspense fallback={<div className="h-64 animate-pulse rounded-lg border bg-secondary/40" />}>
-            <LoadAnimation result={result} seatsOut={seatsOut} />
+            <LoadAnimation result={result} />
           </Suspense>
         </Section>
 
@@ -108,7 +108,7 @@ const AircraftDetail = ({ result, clearance, seatsOut }: { result: FitResult; cl
 
         {/* Cabin */}
         <Section
-          title="Cabin floor plan (top-down, no stacking, seats out)"
+          title={`Cabin floor plan (top-down, no stacking${layout.seats.length ? `, ${layout.seats.length} seats in` : ", seats out"})`}
           aside={`${Math.round(layout.floorUtilization * 100)}% floor used`}
         >
           <CabinLayout result={result} />
@@ -265,6 +265,18 @@ const CabinLayout = ({ result }: { result: FitResult }) => {
       <text x={W - pad} y={pad - 8} fontSize={11} textAnchor="end" className="fill-muted-foreground">
         {ac.cabinWidth}" wide · grid = 1 ft
       </text>
+      {layout.seats.map((st, i) => {
+        const x = pad + inset.x + st.x * scale, y = pad + inset.y + st.y * scale;
+        return (
+          <g key={`seat-${i}`} opacity={0.75}>
+            <rect x={x} y={y} width={st.w * scale} height={st.h * scale} rx={3} className="fill-muted-foreground/30 stroke-muted-foreground/60" strokeWidth={1} />
+            <rect x={x} y={y} width={4} height={st.h * scale} rx={1} className="fill-muted-foreground/60" />
+            {st.removable && (
+              <title>Removable seat</title>
+            )}
+          </g>
+        );
+      })}
       {layout.placements.map((p, i) => {
         const x = pad + inset.x + p.x * scale;
         const y = pad + inset.y + p.y * scale;

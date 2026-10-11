@@ -44,15 +44,57 @@ export interface ItemCheck {
   turn?: TurnCheck;
 }
 
-/** Across-cabin footprint of one seat and fore-aft pitch between rows, inches. */
+/** Seat footprint (across × fore-aft), row pitch, and where the door sits along the cabin. */
 export const SEAT_WIDTH_IN = 18;
+export const SEAT_DEPTH_IN = 20;
 export const SEAT_PITCH_IN = 30;
+/** Fraction of cabin length from the nose to the door center (not in the specs). */
+export const DOOR_POS_FRAC = 0.3;
+
+/** A seat on the floor, cabin coordinates: x from the nose, y from the wall opposite the door. */
+export interface Seat {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** On the wall opposite the door. */
+  far: boolean;
+  removable: boolean;
+}
+
+/**
+ * Assumed cabin arrangement: one seat per side per row at SEAT_PITCH_IN, skipping the
+ * door bay on the door side. The removable ones are those nearest the door on the far
+ * side first (the swing zone), then nearest the door on the door side.
+ */
+export function seatLayout(ac: Aircraft): Seat[] {
+  const L = ac.cabinLength, W = ac.cabinWidth;
+  const doorX = L * DOOR_POS_FRAC;
+  const bay = ac.doorWidth / 2 + SEAT_DEPTH_IN / 2 + 2;
+  const seats: Seat[] = [];
+  for (let x = 14; x + SEAT_DEPTH_IN <= L - 6 && seats.length < ac.seats; x += SEAT_PITCH_IN) {
+    seats.push({ x, y: 1, w: SEAT_DEPTH_IN, h: SEAT_WIDTH_IN, far: true, removable: false });
+    if (seats.length < ac.seats && Math.abs(x + SEAT_DEPTH_IN / 2 - doorX) > bay)
+      seats.push({ x, y: W - 1 - SEAT_WIDTH_IN, w: SEAT_DEPTH_IN, h: SEAT_WIDTH_IN, far: false, removable: false });
+  }
+  const byPriority = [...seats].sort(
+    (a, b) => Number(b.far) - Number(a.far) || Math.abs(a.x + a.w / 2 - doorX) - Math.abs(b.x + b.w / 2 - doorX),
+  );
+  byPriority.slice(0, ac.removableSeats).forEach((st) => (st.removable = true));
+  return seats;
+}
+
+/** Seats still on the floor under the current option. */
+export const seatsInstalled = (ac: Aircraft, opts: PlanOptions) =>
+  seatLayout(ac).filter((st) => !(opts.removeSeats && st.removable));
 
 export interface TurnCheck {
   /** Longer than the cabin is wide: it has to swing to lie along the cabin. */
   needed: boolean;
   /** Angle from the cabin axis at which it comes through the door, degrees. 90 = straight in. */
   entryAngle: number;
+  /** Swings toward the tail (true) or the nose. */
+  aft: boolean;
   /** Cabin width the swing needs, inches. */
   widthNeeded: number;
   /** Cabin length the swing uses from the door jamb, inches. */
@@ -89,13 +131,21 @@ export function checkTurn(item: CargoItem, orient: [number, number], ac: Aircraf
   const W = ac.cabinWidth - c;
   const needed = through > W;
   const g = turnGeometry(through, across, ac.doorWidth - c);
-  const seatBlock = ac.seats > 0 ? SEAT_WIDTH_IN : 0;
-  const okSeatsIn = g.widthNeeded <= W - seatBlock;
-  const seatsToPull = okSeatsIn || !seatBlock ? 0 : Math.ceil((g.reach + across) / SEAT_PITCH_IN);
-  const okSeatsOut = g.widthNeeded <= W && seatsToPull <= ac.removableSeats;
+  // Swing toward whichever end of the cabin has more room.
+  const doorX = ac.cabinLength * DOOR_POS_FRAC;
+  const aftRoom = ac.cabinLength - doorX, fwdRoom = doorX;
+  const aft = aftRoom >= fwdRoom;
+  const roomOk = g.reach <= Math.max(aftRoom, fwdRoom) - c;
+  // Seats on the far wall inside the zone the leading end sweeps.
+  const zone: [number, number] = aft ? [doorX - across, doorX + g.reach] : [doorX - g.reach, doorX + across];
+  const inZone = seatLayout(ac).filter((st) => st.far && st.x + st.w > zone[0] && st.x < zone[1]);
+  const okSeatsIn = roomOk && (g.widthNeeded <= W - (inZone.length ? SEAT_WIDTH_IN : 0));
+  const seatsToPull = okSeatsIn ? 0 : inZone.length;
+  const okSeatsOut = roomOk && g.widthNeeded <= W && inZone.every((st) => st.removable);
   return {
     needed,
     entryAngle: needed ? g.entryAngle : 90,
+    aft,
     widthNeeded: g.widthNeeded,
     reach: g.reach,
     okSeatsIn,
@@ -121,6 +171,8 @@ export interface Placement {
 
 export interface LayoutResult {
   placements: Placement[];
+  /** Seats left on the floor, as obstacles the layout worked around. */
+  seats: Seat[];
   unplaced: { itemId: string; label: string }[];
   floorLength: number;
   floorWidth: number;
@@ -212,7 +264,7 @@ function footprints(item: CargoItem, maxZ: number): { w: number; h: number; z: n
  * Single-layer floor layout using MaxRects (best short side fit).
  * Units that individually can't fit are reported as unplaced.
  */
-export function layoutFloor(items: CargoItem[], ac: Aircraft, clearance = 0): LayoutResult {
+export function layoutFloor(items: CargoItem[], ac: Aircraft, clearance = 0, seats: Seat[] = []): LayoutResult {
   const L = Math.max(0, ac.cabinLength - clearance);
   const W = Math.max(0, ac.cabinWidth - clearance);
   const H = ac.cabinHeight - clearance;
@@ -231,6 +283,7 @@ export function layoutFloor(items: CargoItem[], ac: Aircraft, clearance = 0): La
   units.sort((a, b) => minArea(b) - minArea(a));
 
   let free: Rect[] = [{ x: 0, y: 0, w: L, h: W }];
+  for (const st of seats) free = splitFree(free, { x: st.x - 1, y: st.y - 1, w: st.w + 2, h: st.h + 2 });
   const placements: Placement[] = [];
   const unplaced: LayoutResult["unplaced"] = [];
 
@@ -255,7 +308,8 @@ export function layoutFloor(items: CargoItem[], ac: Aircraft, clearance = 0): La
   }
 
   const used = placements.reduce((s, p) => s + p.w * p.h, 0);
-  return { placements, unplaced, floorLength: L, floorWidth: W, floorUtilization: L * W > 0 ? used / (L * W) : 0 };
+  const avail = L * W - seats.reduce((s, st) => s + st.w * st.h, 0);
+  return { placements, unplaced, seats, floorLength: L, floorWidth: W, floorUtilization: avail > 0 ? used / avail : 0 };
 }
 
 function splitFree(free: Rect[], p: Rect): Rect[] {
@@ -301,7 +355,7 @@ export function evaluate(items: CargoItem[], ac: Aircraft, opts: PlanOptions): F
     };
   });
   const payload = calcPayload(items, ac, opts);
-  const layout = layoutFloor(items, ac, c);
+  const layout = layoutFloor(items, ac, c, seatsInstalled(ac, opts));
 
   const hard: string[] = [];
   const soft: string[] = [];
@@ -317,13 +371,17 @@ export function evaluate(items: CargoItem[], ac: Aircraft, opts: PlanOptions): F
     hard.push(
       t.widthNeeded > ac.cabinWidth - c
         ? `${x.item.name} can't make the turn from the door: the swing needs ${fmt(t.widthNeeded)}" across, cabin is ${fmt(ac.cabinWidth - c)}"`
-        : `${x.item.name} can't make the turn with seats in: ${t.seatsToPull} seat${t.seatsToPull > 1 ? "s" : ""} in the swing zone, only ${ac.removableSeats} removable`,
+        : t.reach > Math.max(ac.cabinLength * DOOR_POS_FRAC, ac.cabinLength * (1 - DOOR_POS_FRAC)) - c
+          ? `${x.item.name} can't make the turn: the swing reaches ${fmt(t.reach)}" down the cabin from the door, more than there is`
+          : `${x.item.name} can't make the turn with seats in: ${t.seatsToPull} seat${t.seatsToPull > 1 ? "s" : ""} in the swing zone aren't removable`,
     );
   }
 
   if (!hard.length) {
     if (layout.unplaced.length)
-      soft.push(`${layout.unplaced.length} unit${layout.unplaced.length > 1 ? "s" : ""} won't fit on the floor without stacking`);
+      soft.push(
+        `${layout.unplaced.length} unit${layout.unplaced.length > 1 ? "s" : ""} won't fit on the floor${layout.seats.length ? " with seats in" : " without stacking"}`,
+      );
     for (const x of checks) {
       const t = x.turn;
       if (t && t.needed && !t.ok && t.okSeatsOut)

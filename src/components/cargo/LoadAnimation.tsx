@@ -4,7 +4,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { Pause, Play, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Aircraft } from "@/data/aircraft";
-import { SEAT_PITCH_IN, SEAT_WIDTH_IN, type FitResult } from "@/lib/fit";
+import { DOOR_POS_FRAC, type FitResult } from "@/lib/fit";
 import { cn } from "@/lib/utils";
 import { itemColor } from "./colors";
 
@@ -23,7 +23,6 @@ import { itemColor } from "./colors";
  */
 
 const S = 0.1;
-const DOOR_X_FRAC = 0.3;
 const UNIT_SECONDS = 4.4;
 const FAIL_SECONDS = 2.8;
 
@@ -41,6 +40,8 @@ interface Step {
   rest: { x: number; y: number; z: number; w: number; h: number; d: number } | null;
   /** Entry angle from the cabin axis (radians) when it has to swing; π/2 = straight in. */
   entry: number;
+  /** Swing toward the tail (+1) or the nose (−1). */
+  side: number;
 }
 
 const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
@@ -68,6 +69,7 @@ function buildSteps(result: FitResult): Step[] {
         door,
         fail: door ?? sorted,
         entry: ((c.turn?.needed ? c.turn.entryAngle : 90) * Math.PI) / 180,
+        side: c.turn ? (c.turn.aft ? 1 : -1) : 1,
         rest:
           p && door
             ? {
@@ -102,7 +104,7 @@ const IDENT = new THREE.Quaternion();
 const AX = new THREE.Vector3(1, 0, 0), AY = new THREE.Vector3(0, 1, 0), AZ = new THREE.Vector3(0, 0, 1);
 const HALF_TURNS = [IDENT, ...[AX, AY, AZ].map((a) => new THREE.Quaternion().setFromAxisAngle(a, Math.PI))];
 
-function planFor(s: Step, doorX: number): Plan | null {
+function planFor(s: Step): Plan | null {
   if (!s.door || !s.rest) return null;
   // Permutation rotation: local (across, up, through) → world (w, h, d).
   const local = [...s.door];
@@ -121,7 +123,7 @@ function planFor(s: Step, doorX: number): Plan | null {
     m.makeBasis(cols[0], cols[1], cols[2]);
   }
   const base = new THREE.Quaternion().setFromRotationMatrix(m);
-  const sx = s.rest.x - doorX >= 0 ? 1 : -1;
+  const sx = s.side;
 
   // A box is symmetric under half-turns, so pick the equivalent orientation that
   // threads leading-end first (local −Z into the cabin) with the least extra tipping.
@@ -154,14 +156,22 @@ function planFor(s: Step, doorX: number): Plan | null {
 /* ---------- fuselage shell with the door cut out ---------- */
 
 function fuselageShell(L: number, W: number, H: number, doorX: number, DW: number, DH: number) {
-  const rx = W / 2;
-  const ry = (H / 2) * 1.22;
-  const cy = H / 2 - 0.08; // ellipse center; floor at y = 0 cuts it slightly above the belly
-  const nSeg = 40, nX = 56;
+  // Superellipse cross-section (n = 5): walls near vertical, rounded crown, flat-ish floor
+  // sitting just above the belly, so the floor is nearly the full cabin width like the spec.
+  const rx = W / 2 + 0.08;
+  const ry = (H / 2) * 1.25;
+  const cy = H / 2;
+  const n = 5;
+  const nSeg = 48, nX = 56;
   const pos: number[] = [], norm: number[] = [], idx: number[] = [];
+  const sp = (v: number, e: number) => Math.sign(v) * Math.pow(Math.abs(v), e);
   const ring = (i: number) => {
     const t = (i / nSeg) * Math.PI * 2;
-    return { z: Math.cos(t) * rx, y: cy + Math.sin(t) * ry, nz: Math.cos(t) / rx, ny: Math.sin(t) / ry };
+    const c = Math.cos(t), sn = Math.sin(t);
+    const z = rx * sp(c, 2 / n), y = cy + ry * sp(sn, 2 / n);
+    // gradient of |z/rx|^n + |(y-cy)/ry|^n
+    const nz = sp(z / rx, n - 1) / rx, ny = sp((y - cy) / ry, n - 1) / ry;
+    return { z, y, nz, ny };
   };
   for (let i = 0; i <= nSeg; i++) {
     const r = ring(i);
@@ -191,7 +201,7 @@ function fuselageShell(L: number, W: number, H: number, doorX: number, DW: numbe
 
 /* ---------- component ---------- */
 
-const LoadAnimation = ({ result, seatsOut }: { result: FitResult; seatsOut: boolean }) => {
+const LoadAnimation = ({ result }: { result: FitResult }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(true);
   const [stepIdx, setStepIdx] = useState(0);
@@ -213,12 +223,11 @@ const LoadAnimation = ({ result, seatsOut }: { result: FitResult; seatsOut: bool
 
     const L = ac.cabinLength * S, W = ac.cabinWidth * S, H = ac.cabinHeight * S;
     const DW = ac.doorWidth * S, DH = ac.doorHeight * S;
-    const doorX = -L / 2 + L * DOOR_X_FRAC;
+    const doorX = -L / 2 + L * DOOR_POS_FRAC;
     const GROUND = -sillIn * S;
     const highWing = HIGH_WING.has(ac.id);
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0xf3efe6, 60, 140);
     const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 400);
     camera.position.set(doorX + L * 0.5, H * 2.4, W * 4.6);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -260,7 +269,7 @@ const LoadAnimation = ({ result, seatsOut }: { result: FitResult; seatsOut: bool
     // Fuselage
     const shell = fuselageShell(L, W, H, doorX, DW, DH);
     const skinMat = new THREE.MeshPhysicalMaterial({
-      color: 0xf2efe8, roughness: 0.35, metalness: 0.15, transparent: true, opacity: 0.3, side: THREE.DoubleSide,
+      color: 0xf2efe8, roughness: 0.35, metalness: 0.15, transparent: true, opacity: 0.24, side: THREE.DoubleSide,
       depthWrite: false,
     });
     const skin = new THREE.Mesh(shell.geometry, skinMat);
@@ -293,10 +302,11 @@ const LoadAnimation = ({ result, seatsOut }: { result: FitResult; seatsOut: bool
     tail.castShadow = true;
     scene.add(tail);
     // Wing, stabilizers, fin
-    const wingY = highWing ? shell.cy + shell.ry * 0.95 : shell.cy - shell.ry * 0.75;
-    const wing = new THREE.Mesh(new THREE.BoxGeometry(W * 0.9, 0.08, L * 2.1), coneMat);
-    wing.position.set(doorX + L * 0.28, wingY, 0);
-    wing.castShadow = true;
+    // Wings are drawn see-through and don't shade the cabin: the load is the point of the scene.
+    const wingMat = new THREE.MeshStandardMaterial({ color: 0xe9e4da, roughness: 0.4, transparent: true, opacity: 0.3, depthWrite: false });
+    const wingY = highWing ? shell.cy + shell.ry * 0.98 : shell.cy - shell.ry * 0.75;
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(W * 0.7, 0.08, L * 2.1), wingMat);
+    wing.position.set(doorX + (highWing ? L * 0.42 : L * 0.28), wingY, 0);
     scene.add(wing);
     const hstab = new THREE.Mesh(new THREE.BoxGeometry(W * 0.45, 0.06, L * 0.75), coneMat);
     hstab.position.set(L / 2 + L * 0.42, shell.cy + 0.2, 0);
@@ -329,30 +339,20 @@ const LoadAnimation = ({ result, seatsOut }: { result: FitResult; seatsOut: bool
     const drop = Math.min(DH, -GROUND);
     hinge.rotation.x = Math.PI / 2 + Math.asin(Math.min(1, drop / DH)) * 0.98;
     scene.add(hinge);
-    // Seats along both walls, ghosted: the floor plan assumes they're out. The removable ones
-    // are those nearest the door on the far side (the swing zone) and vanish when pulled.
-    const seatMat = new THREE.MeshStandardMaterial({ color: 0x7c6f5c, transparent: true, opacity: 0.35, roughness: 0.9 });
-    const seatW = SEAT_WIDTH_IN * S, pitch = SEAT_PITCH_IN * S, seatD = 2.0;
-    const slots: { x: number; z: number; far: boolean }[] = [];
-    for (let x = -L / 2 + 1.4; x < L / 2 - 1 && slots.length < ac.seats * 2; x += pitch) {
-      slots.push({ x, z: -W / 2 + seatW / 2 + 0.1, far: true });
-      if (Math.abs(x - doorX) > DW / 2 + seatD / 2 + 0.2) slots.push({ x, z: W / 2 - seatW / 2 - 0.1, far: false });
-    }
-    const seats = slots.slice(0, ac.seats);
-    const removable = [...seats]
-      .sort((a, b) => Number(b.far) - Number(a.far) || Math.abs(a.x - doorX) - Math.abs(b.x - doorX))
-      .slice(0, ac.removableSeats);
-    for (const st of seats) {
-      if (seatsOut && removable.includes(st)) continue;
+    // Seats the engine modeled as obstacles (same layout the floor plan draws).
+    const seatMat = new THREE.MeshStandardMaterial({ color: 0xa3957f, roughness: 0.9, transparent: true, opacity: 0.9 });
+    for (const st of result.layout.seats) {
       const g = new THREE.Group();
-      const cushion = new THREE.Mesh(new THREE.BoxGeometry(seatD, 0.45, seatW), seatMat);
+      const sd = st.w * S, sw = st.h * S;
+      const cushion = new THREE.Mesh(new THREE.BoxGeometry(sd, 0.45, sw), seatMat);
       cushion.position.y = 1.5;
-      const back = new THREE.Mesh(new THREE.BoxGeometry(0.35, 2.1, seatW), seatMat);
-      back.position.set(-seatD / 2 + 0.18, 2.7, 0);
-      const base = new THREE.Mesh(new THREE.BoxGeometry(seatD * 0.6, 1.3, seatW * 0.6), seatMat);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.35, 2.1, sw), seatMat);
+      back.position.set(-sd / 2 + 0.18, 2.7, 0);
+      const base = new THREE.Mesh(new THREE.BoxGeometry(sd * 0.6, 1.3, sw * 0.6), seatMat);
       base.position.y = 0.65;
       g.add(cushion, back, base);
-      g.position.set(st.x, 0, st.z);
+      g.children.forEach((m) => (m.castShadow = true));
+      g.position.set(-L / 2 + (st.x + st.w / 2) * S, 0, -W / 2 + (st.y + st.h / 2) * S);
       scene.add(g);
     }
     const frameMat = new THREE.MeshStandardMaterial({ color: 0x2f6fb3 });
@@ -364,7 +364,7 @@ const LoadAnimation = ({ result, seatsOut }: { result: FitResult; seatsOut: bool
     }
 
     // Cargo boxes at real size. Local axes = door orientation: X across, Y up, Z through.
-    const plans = steps.map((s) => planFor(s, doorX));
+    const plans = steps.map((s) => planFor(s));
     const boxes = steps.map((s) => {
       const [bx, by, bz] = (s.door ?? s.fail).map((v) => v * S);
       const geo = new THREE.BoxGeometry(bx, by, bz);
@@ -436,8 +436,8 @@ const LoadAnimation = ({ result, seatsOut }: { result: FitResult; seatsOut: bool
           const startZ = W / 2 + through / 2 + W * 0.8;
           const sillZ = W / 2 + through / 2 + 0.12;
           // Where the unit sits once threaded: along the wall, just inside.
-          const endX = doorX + sx * (yawed ? through / 2 : 0);
-          const endZ = W / 2 - (yawed ? across / 2 : through / 2) - 0.15;
+          const endX = doorX + sx * (yawed ? through / 2 + 0.3 : 0);
+          const endZ = yawed ? 0 : W / 2 - through / 2 - 0.15;
           const P = [0, 0.16, 0.3, 0.68, plan.needsTip ? 0.84 : 0.68, 1];
           if (u < P[1]) {
             // roll up on the ramp
@@ -464,7 +464,7 @@ const LoadAnimation = ({ result, seatsOut }: { result: FitResult; seatsOut: bool
               // Swing about the trailing end, which gets pulled inward as the unit comes round.
               const k = ease((kk - SW) / (1 - SW));
               const phiK = lerp(phi, 0, k);
-              const tailX = lerp(doorX + axis.x * 0.25, doorX, k);
+              const tailX = lerp(doorX + axis.x * 0.25, doorX + sx * 0.3, k);
               const tailZ = lerp(W / 2 + axis.z * 0.25, endZ, k);
               const dirX = sx * Math.cos(phiK), dirZ = -Math.sin(phiK);
               const betaK = Math.atan2(-sx * Math.cos(phiK), Math.sin(phiK));
@@ -476,10 +476,17 @@ const LoadAnimation = ({ result, seatsOut }: { result: FitResult; seatsOut: bool
             tmpQ.copy(plan.yawEnd).slerp(plan.rest, k);
             pose(m, endX, lerp(up / 2, s.rest.y, k) + Math.sin(k * Math.PI) * 0.3, endZ, tmpQ);
           } else {
-            // slide to its floor-plan spot
-            const k = ease((u - P[4]) / (1 - P[4]));
+            // slide to its floor-plan spot: down the aisle first, then across into the bay
+            const kk = (u - P[4]) / (1 - P[4]);
             const y0 = plan.needsTip ? s.rest.y : up / 2;
-            pose(m, lerp(endX, s.rest.x, k), lerp(y0, s.rest.y, k), lerp(endZ, s.rest.z, k), plan.rest);
+            const split = 0.6;
+            if (kk < split) {
+              const k = ease(kk / split);
+              pose(m, lerp(endX, s.rest.x, k), lerp(y0, s.rest.y, k), lerp(endZ, 0, k), plan.rest);
+            } else {
+              const k = ease((kk - split) / (1 - split));
+              pose(m, s.rest.x, s.rest.y, lerp(0, s.rest.z, k), plan.rest);
+            }
           }
           mat.emissive.setHex(0);
         } else if (s.door) {
@@ -557,7 +564,7 @@ const LoadAnimation = ({ result, seatsOut }: { result: FitResult; seatsOut: bool
       });
       mount.removeChild(renderer.domElement);
     };
-  }, [steps, ac, sillIn, seatsOut]);
+  }, [steps, ac, sillIn, result.layout.seats]);
 
   if (steps.length === 0) return null;
 
