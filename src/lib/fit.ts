@@ -5,8 +5,10 @@ import type { Aircraft, CargoItem } from "@/data/aircraft";
  *
  * Model assumptions (shown to the user in the UI):
  * - Cargo is treated as a rectangular box. Irregular shapes may fit where a box would not.
- * - Door and cabin are rectangles. Fuselage taper, sill height, and the turn from door
- *   into cabin are not modeled — long items get a "verify the turn" warning instead.
+ * - Door and cabin are rectangles. Fuselage taper and sill height are not modeled.
+ * - The turn from a side door into the cabin is checked in plan view (see `turnGeometry`):
+ *   a unit comes in at the shallowest angle its door chord allows, then swings to lie
+ *   along the cabin. Seats opposite the door narrow the room for that swing.
  * - Floor layout is single-layer (no stacking).
  * - `clearance` is subtracted from every opening/cabin dimension.
  */
@@ -38,8 +40,69 @@ export interface ItemCheck {
   /** Cross-section (w × h, inches) that goes through the door, when it fits. */
   doorOrientation?: [number, number];
   cabin: boolean;
-  /** Item's longest dimension exceeds cabin width: it must turn after entering. */
-  turnWarning: boolean;
+  /** Plan-view turn from the door into the cabin (present when the unit passes the door). */
+  turn?: TurnCheck;
+}
+
+/** Across-cabin footprint of one seat and fore-aft pitch between rows, inches. */
+export const SEAT_WIDTH_IN = 18;
+export const SEAT_PITCH_IN = 30;
+
+export interface TurnCheck {
+  /** Longer than the cabin is wide: it has to swing to lie along the cabin. */
+  needed: boolean;
+  /** Angle from the cabin axis at which it comes through the door, degrees. 90 = straight in. */
+  entryAngle: number;
+  /** Cabin width the swing needs, inches. */
+  widthNeeded: number;
+  /** Cabin length the swing uses from the door jamb, inches. */
+  reach: number;
+  okSeatsIn: boolean;
+  okSeatsOut: boolean;
+  /** Seats on the far side within the swing zone that would have to come out. */
+  seatsToPull: number;
+  /** Feasible under the current seat option. */
+  ok: boolean;
+}
+
+/**
+ * Plan-view turn of a box (length `len`, width `w`) through a slot of width `slot`
+ * into a corridor it must end up lying along. The chord through the slot forces an
+ * entry angle φ with sin φ ≥ w/slot; once fully inside, the swing down to the
+ * corridor axis needs len·sin φ + w·cos φ of corridor width at its widest.
+ */
+export function turnGeometry(len: number, w: number, slot: number) {
+  const phiStar = Math.asin(Math.min(1, w / Math.max(slot, 1e-9)));
+  const phiPeak = Math.atan2(len, w);
+  const phi = Math.min(phiStar, phiPeak);
+  return {
+    entryAngle: (phiStar * 180) / Math.PI,
+    widthNeeded: len * Math.sin(phi) + w * Math.cos(phi),
+    reach: len * Math.cos(phiStar) + w * Math.sin(phiStar),
+  };
+}
+
+export function checkTurn(item: CargoItem, orient: [number, number], ac: Aircraft, opts: PlanOptions): TurnCheck {
+  const c = opts.clearance;
+  const [across, up] = orient;
+  const through = (item.length * item.width * item.height) / (across * up);
+  const W = ac.cabinWidth - c;
+  const needed = through > W;
+  const g = turnGeometry(through, across, ac.doorWidth - c);
+  const seatBlock = ac.seats > 0 ? SEAT_WIDTH_IN : 0;
+  const okSeatsIn = g.widthNeeded <= W - seatBlock;
+  const seatsToPull = okSeatsIn || !seatBlock ? 0 : Math.ceil((g.reach + across) / SEAT_PITCH_IN);
+  const okSeatsOut = g.widthNeeded <= W && seatsToPull <= ac.removableSeats;
+  return {
+    needed,
+    entryAngle: needed ? g.entryAngle : 90,
+    widthNeeded: g.widthNeeded,
+    reach: g.reach,
+    okSeatsIn,
+    okSeatsOut,
+    seatsToPull,
+    ok: !needed || okSeatsIn || (opts.removeSeats && okSeatsOut),
+  };
 }
 
 export interface Placement {
@@ -229,13 +292,12 @@ export function evaluate(items: CargoItem[], ac: Aircraft, opts: PlanOptions): F
   const checks: ItemCheck[] = items.map((item) => {
     const orient = doorFit(item, ac, c);
     const cabin = cabinFit(item, ac, c);
-    const longest = Math.max(item.length, item.width, item.height);
     return {
       item,
       door: !!orient,
       doorOrientation: orient ?? undefined,
       cabin,
-      turnWarning: !!orient && cabin && longest > ac.cabinWidth - c,
+      turn: orient && cabin ? checkTurn(item, orient, ac, opts) : undefined,
     };
   });
   const payload = calcPayload(items, ac, opts);
@@ -248,12 +310,25 @@ export function evaluate(items: CargoItem[], ac: Aircraft, opts: PlanOptions): F
   if (doorFails.length) hard.push(`Door too small for ${doorFails.map((x) => x.item.name).join(", ")}`);
   if (cabinFails.length) hard.push(`Cabin too small for ${cabinFails.map((x) => x.item.name).join(", ")}`);
   if (!payload.pass) hard.push(`Over payload by ${fmt(-payload.margin)} lb`);
+  for (const x of checks) {
+    const t = x.turn;
+    if (!t || !t.needed || t.ok) continue;
+    if (t.okSeatsOut) continue; // reported as a soft note below
+    hard.push(
+      t.widthNeeded > ac.cabinWidth - c
+        ? `${x.item.name} can't make the turn from the door: the swing needs ${fmt(t.widthNeeded)}" across, cabin is ${fmt(ac.cabinWidth - c)}"`
+        : `${x.item.name} can't make the turn with seats in: ${t.seatsToPull} seat${t.seatsToPull > 1 ? "s" : ""} in the swing zone, only ${ac.removableSeats} removable`,
+    );
+  }
 
   if (!hard.length) {
     if (layout.unplaced.length)
       soft.push(`${layout.unplaced.length} unit${layout.unplaced.length > 1 ? "s" : ""} won't fit on the floor without stacking`);
-    const turns = checks.filter((x) => x.turnWarning);
-    if (turns.length) soft.push(`Verify the turn from door into cabin: ${turns.map((x) => x.item.name).join(", ")}`);
+    for (const x of checks) {
+      const t = x.turn;
+      if (t && t.needed && !t.ok && t.okSeatsOut)
+        soft.push(`${x.item.name} needs ${t.seatsToPull} seat${t.seatsToPull > 1 ? "s" : ""} pulled to make the turn — turn on "Pull removable seats"`);
+    }
     if (payload.pct > 90) soft.push(`Payload at ${Math.round(payload.pct)}% — little margin for fuel`);
   }
 

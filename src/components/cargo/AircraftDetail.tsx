@@ -26,7 +26,7 @@ const verdictCopy = {
   "no-go": "Won't work on this aircraft as loaded.",
 };
 
-const AircraftDetail = ({ result, clearance }: { result: FitResult; clearance: number }) => {
+const AircraftDetail = ({ result, clearance, seatsOut }: { result: FitResult; clearance: number; seatsOut: boolean }) => {
   const { aircraft: ac, verdict, reasons, checks, payload, layout } = result;
 
   return (
@@ -93,7 +93,7 @@ const AircraftDetail = ({ result, clearance }: { result: FitResult; clearance: n
         {/* 3D load */}
         <Section title="Loading sequence (3D)" aside="door placed ⅓ back; position not in the data">
           <Suspense fallback={<div className="h-64 animate-pulse rounded-lg border bg-secondary/40" />}>
-            <LoadAnimation result={result} />
+            <LoadAnimation result={result} seatsOut={seatsOut} />
           </Suspense>
         </Section>
 
@@ -108,7 +108,7 @@ const AircraftDetail = ({ result, clearance }: { result: FitResult; clearance: n
 
         {/* Cabin */}
         <Section
-          title="Cabin floor plan (top-down, no stacking)"
+          title="Cabin floor plan (top-down, no stacking, seats out)"
           aside={`${Math.round(layout.floorUtilization * 100)}% floor used`}
         >
           <CabinLayout result={result} />
@@ -128,6 +128,18 @@ const AircraftDetail = ({ result, clearance }: { result: FitResult; clearance: n
                 </span>
                 <Check ok={c.door} label="door" />
                 <Check ok={c.cabin} label="cabin" />
+                {c.turn?.needed && (
+                  <Check
+                    ok={c.turn.ok}
+                    label={
+                      c.turn.ok
+                        ? `turn ${Math.round(c.turn.entryAngle)}°${!c.turn.okSeatsIn ? `, ${c.turn.seatsToPull} seats out` : ""}`
+                        : c.turn.okSeatsOut
+                          ? `turn: pull ${c.turn.seatsToPull} seats`
+                          : "turn"
+                    }
+                  />
+                )}
               </li>
             ))}
           </ul>

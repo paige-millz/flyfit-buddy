@@ -84,7 +84,7 @@ const Index = () => {
                 selectedId={selected.aircraft.id}
                 onSelect={(id) => setPlan({ ...plan, aircraftId: id })}
               />
-              <AircraftDetail result={selected} clearance={options.clearance} />
+              <AircraftDetail result={selected} clearance={options.clearance} seatsOut={options.removeSeats} />
             </>
           ) : (
             <EmptyState onSample={loadSample} />
