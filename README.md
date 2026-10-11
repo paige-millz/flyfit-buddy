@@ -32,6 +32,8 @@ Built for daily use:
 
 **Model limits:** cargo is a rectangular box, the cabin a rectangle. Fuselage taper, tie-downs, CG and fuel are not modeled. Door station, sill height and seat stations come from public layouts and are typical, not serial-specific. Irregular items (e.g. winglets) may fit where a box wouldn't. Confirm with the operator before quoting.
 
+Exterior 3D models in the loading scene come from the FlightGear add-on collection (GPL v2+), converted to glTF; see `public/models/ATTRIBUTION.md`. They are visual only.
+
 Fit logic lives in `src/lib/fit.ts` (pure, unit-tested). Aircraft specs live in `src/data/aircraft.ts`; per-type geometry (cargo door, station, side, sill, floor width, seat map, airframe shape) lives in `src/data/profiles.ts` with public sources per entry. Values marked approx are inferred from published overall dimensions, not quoted; verify against the W&B manual before relying on seat stations.
 
 ## Why I Built It

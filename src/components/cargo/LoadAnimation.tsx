@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { Pause, Play, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Aircraft } from "@/data/aircraft";
@@ -204,6 +205,7 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(true);
   const [showAirframe, setShowAirframe] = useState(true);
+  const [modelState, setModelState] = useState<"none" | "loading" | "ready" | "failed">("none");
   const airframeRef = useRef(showAirframe);
   airframeRef.current = showAirframe;
   const [stepIdx, setStepIdx] = useState(0);
@@ -223,6 +225,7 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
     const mount = mountRef.current;
     if (!mount) return;
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let disposed = false;
 
     const L = ac.cabinLength * S, W = floorWidth(ac) * S, H = ac.cabinHeight * S;
     const DW = ac.doorWidth * S, DH = ac.doorHeight * S;
@@ -239,8 +242,8 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
     scene.add(root);
     const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 600);
     // Frame the whole airframe from the door side, three-quarter from above.
-    const viewDist = Math.min(90, Math.max(W * 5, af.overallLengthIn * S * 0.8));
-    camera.position.set(mirror * (doorX * 0.3 + viewDist * 0.35), viewDist * 0.5, viewDist * 0.85);
+    const viewDist = Math.min(110, Math.max(W * 5, af.overallLengthIn * S * 1.0));
+    camera.position.set(mirror * (doorX * 0.3 + viewDist * 0.4), viewDist * 0.55, viewDist * 0.9);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
@@ -287,6 +290,49 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
     const skin = new THREE.Mesh(shell.geometry, skinMat);
     skin.castShadow = true;
     root.add(skin);
+    // Real exterior model when the type has one: meters → scene units, nose aligned to the
+    // cabin front via the profile's nose length, gear on the ramp. Replaces the procedural
+    // shell; drawn translucent so the load stays visible.
+    let modelGroup: THREE.Group | null = null;
+    const modelRef = geo.profile?.model;
+    if (modelRef) {
+      setModelState("loading");
+      const url = `${import.meta.env.BASE_URL}models/${modelRef.file}`;
+      new GLTFLoader().load(
+        url,
+        (gltf) => {
+          if (disposed) return;
+          const m = gltf.scene;
+          const toScene = 1 / 0.254; // 1 scene unit = 10 in
+          m.scale.setScalar(toScene);
+          m.updateMatrixWorld(true);
+          const box = new THREE.Box3().setFromObject(m);
+          const noseX = -L / 2 - af.noseToCabinFrontIn * S;
+          m.position.set(noseX - box.min.x, GROUND - box.min.y, -(box.min.z + box.max.z) / 2);
+          m.traverse((o) => {
+            if (o instanceof THREE.Mesh) {
+              const mats = Array.isArray(o.material) ? o.material : [o.material];
+              o.material = mats.map((mm) => {
+                const c = (mm as THREE.MeshStandardMaterial).clone();
+                c.transparent = true;
+                c.opacity = Math.min(c.opacity, 0.5);
+                c.depthWrite = false;
+                c.side = THREE.DoubleSide;
+                return c;
+              });
+              if (!Array.isArray(o.material) || o.material.length === 1) o.material = (o.material as THREE.Material[])[0];
+              o.castShadow = true;
+            }
+          });
+          modelGroup = new THREE.Group();
+          modelGroup.add(m);
+          root.add(modelGroup);
+          setModelState("ready");
+        },
+        undefined,
+        () => { if (!disposed) setModelState("failed"); },
+      );
+    }
     const floor = new THREE.Mesh(new THREE.BoxGeometry(L, 0.06, W), new THREE.MeshStandardMaterial({ color: 0x6f6350, roughness: 0.9 }));
     floor.position.y = -0.03;
     floor.receiveShadow = true;
@@ -613,7 +659,10 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
         );
       }
 
-      airframeGroup.visible = airframeRef.current;
+      const hasModel = !!modelGroup;
+      airframeGroup.visible = airframeRef.current && !hasModel;
+      skin.visible = !hasModel;
+      if (modelGroup) modelGroup.visible = airframeRef.current;
       controls.update();
       renderer.render(scene, camera);
       raf = requestAnimationFrame(render);
@@ -632,6 +681,7 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
     raf = requestAnimationFrame(render);
 
     return () => {
+      disposed = true;
       cancelAnimationFrame(raf);
       ro.disconnect();
       controls.dispose();
@@ -654,6 +704,12 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
         <div ref={mountRef} className="w-full overflow-hidden rounded-lg border bg-[#f3efe6]" aria-label="3D loading animation" />
         <div className="pointer-events-none absolute left-3 top-2 rounded bg-black/55 px-2 py-1 text-xs font-semibold text-white">
           {ac.name} · {geo.door.side === "left" ? "left" : "right"} side · cabin box {ac.cabinLength}×{Math.round(floorWidth(ac))}×{ac.cabinHeight} in
+          {geo.profile?.model && modelState === "ready" && (
+            <span className="block font-normal text-white/80">
+              {geo.profile.model.standIn ? "stand-in: " : ""}{geo.profile.model.name} model · FlightGear, GPL
+            </span>
+          )}
+          {geo.profile?.model && modelState === "failed" && <span className="block font-normal text-white/80">model failed to load; showing approximate shape</span>}
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
@@ -668,7 +724,7 @@ const LoadAnimation = ({ result }: { result: FitResult }) => {
         </div>
         <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
           <input type="checkbox" checked={showAirframe} onChange={(e) => setShowAirframe(e.target.checked)} className="h-3.5 w-3.5" />
-          Airframe (approximate shape)
+          {modelState === "ready" ? "Airframe model" : "Airframe (approximate shape)"}
         </label>
         <span className="text-xs text-muted-foreground">
           {Math.min(stepIdx + 1, steps.length)}/{steps.length} · {geo.door.side === "left" ? "LH" : "RH"} {geo.door.type} door, sill {sillIn}"{geo.door.approx ? " (approx)" : ""} · drag to orbit

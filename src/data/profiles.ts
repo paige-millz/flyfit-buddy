@@ -44,8 +44,17 @@ export interface AirframeSpec {
   gear: "retractable" | "fixed";
 }
 
+/** Exterior 3D model for the loading scene (see public/models/ATTRIBUTION.md). */
+export interface ModelRef {
+  file: string;
+  name: string;
+  /** A related type standing in for this one; said so in the scene label. */
+  standIn?: boolean;
+}
+
 export interface AircraftProfile {
   id: string;
+  model?: ModelRef;
   /** Usable width at floor level; the spec's cabinWidth is the max width higher up. */
   floorWidthIn?: number;
   doors: DoorSpec[];
@@ -62,6 +71,7 @@ export const PROFILES: Record<string, AircraftProfile> = {
   /* ---------- turboprops ---------- */
   "king-air-90": {
     id: "king-air-90",
+    model: { file: "kingair.glb", name: "Beechcraft Super King Air (200-series)", standIn: true },
     floorWidthIn: 42,
     doors: [{ role: "main", side: "left", widthIn: 27, heightIn: 51, type: "airstair", stationIn: 132, sillIn: 44, approx: true }],
     seats: [
@@ -75,6 +85,7 @@ export const PROFILES: Record<string, AircraftProfile> = {
   },
   "king-air-200": {
     id: "king-air-200",
+    model: { file: "kingair.glb", name: "Beechcraft Super King Air" },
     floorWidthIn: 49,
     doors: [
       { role: "main", side: "left", widthIn: 27, heightIn: 51.75, type: "airstair", stationIn: 168, sillIn: 47, approx: true },
@@ -91,6 +102,7 @@ export const PROFILES: Record<string, AircraftProfile> = {
   },
   "king-air-350": {
     id: "king-air-350",
+    model: { file: "kingair.glb", name: "Beechcraft Super King Air (200-series)", standIn: true },
     floorWidthIn: 49,
     doors: [{ role: "main", side: "left", widthIn: 26, heightIn: 51.7, type: "airstair", stationIn: 203, sillIn: 47, approx: true }],
     seats: [
@@ -106,6 +118,7 @@ export const PROFILES: Record<string, AircraftProfile> = {
   },
   "pc-12": {
     id: "pc-12",
+    model: { file: "pc12.glb", name: "Pilatus PC-12/47" },
     floorWidthIn: 51,
     doors: [
       { role: "cargo", side: "left", widthIn: 53, heightIn: 52, type: "upward-hinged", stationIn: 168, sillIn: 52, approx: true },
@@ -122,6 +135,7 @@ export const PROFILES: Record<string, AircraftProfile> = {
   },
   "caravan-208": {
     id: "caravan-208",
+    model: { file: "caravan.glb", name: "Cessna 208 Caravan" },
     floorWidthIn: 58,
     doors: [
       { role: "cargo", side: "left", widthIn: 49, heightIn: 50, type: "clamshell", stationIn: 172, sillIn: 47, approx: true },
@@ -205,6 +219,7 @@ export const PROFILES: Record<string, AircraftProfile> = {
   },
   c310: {
     id: "c310",
+    model: { file: "c310.glb", name: "Cessna 310" },
     floorWidthIn: 36,
     doors: [{ role: "main", side: "right", widthIn: 37, heightIn: 36, type: "plug", stationIn: 32, sillIn: 36, approx: true }],
     seats: [
@@ -218,6 +233,7 @@ export const PROFILES: Record<string, AircraftProfile> = {
   },
   c340: {
     id: "c340",
+    model: { file: "c310.glb", name: "Cessna 310", standIn: true },
     floorWidthIn: 32,
     doors: [{ role: "main", side: "left", widthIn: 21, heightIn: 49, type: "airstair", stationIn: 98, sillIn: 40, approx: true }],
     seats: [
@@ -292,6 +308,7 @@ export const PROFILES: Record<string, AircraftProfile> = {
   },
   "da-20": {
     id: "da-20",
+    model: { file: "katana.glb", name: "Diamond DA20 Katana" },
     floorWidthIn: 30,
     doors: [{ role: "main", side: "left", widthIn: 44, heightIn: 50, type: "upward-hinged", stationIn: 28, sillIn: 28, approx: true }],
     seats: [{ stationIn: 25, side: "left", facing: "fwd", removable: false }, { stationIn: 25, side: "right", facing: "fwd", removable: false }],
@@ -318,6 +335,7 @@ export const PROFILES: Record<string, AircraftProfile> = {
   /* ---------- light jets ---------- */
   cj1: {
     id: "cj1",
+    model: { file: "bravo.glb", name: "Cessna Citation Bravo (550)", standIn: true },
     floorWidthIn: 36,
     doors: [{ role: "main", side: "left", widthIn: 24, heightIn: 52, type: "plug", stationIn: 16, sillIn: 40, approx: true }],
     seats: [
