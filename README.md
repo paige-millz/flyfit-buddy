@@ -17,10 +17,11 @@ Enter the cargo once. Every aircraft in the fleet gets checked and ranked:
 - **GO / CHECK / NO-GO per aircraft** — workable options first, smallest capable airframe first
 - **Door clearance** — finds the best cross-section through the door (respects "this side up")
 - **Cabin fit** — any orientation, with a configurable clearance margin
-- **Floor plan** — top-down layout of every unit (quantities expanded), single layer, no stacking
-- **3D loading animation** — each unit flies in through the door in its passing orientation and settles on the floor; units that can't pass stop at the door
+- **Floor plan** — top-down layout of every unit (quantities expanded), single layer, no stacking, working around the seats still installed
+- **3D loading sequence** — fuselage with the door cut in, airstair down, seats in place; each unit comes up the ramp, lifts to the sill, enters at its computed angle, swings about its trailing end into the cabin, and slides to its spot. Units that can't pass are offered up and bump the opening.
 - **Payload** — cargo + mechanics + tools, with optional seat-removal credit
-- **Warnings** — long items that must turn from door into cabin, floor overflow, payload above 90%
+- **Turn into the cabin** — plan-view geometry of the swing from a side door: the entry angle the door chord allows, the cabin width the swing needs, and how many seats in the swing zone have to come out (checked against the removable count)
+- **Warnings** — floor overflow, payload above 90%
 
 Built for daily use:
 
@@ -29,7 +30,7 @@ Built for daily use:
 - Autosaves locally; **Share link** reopens the exact load on any device
 - **Copy summary** puts an email-ready write-up on the clipboard; **Print** gives a clean PDF
 
-**Model limits:** cargo is a rectangular box, the cabin a rectangle. Fuselage taper, sill height, tie-downs, CG and fuel are not modeled. Irregular items (e.g. winglets) may fit where a box wouldn't. Confirm with the operator before quoting.
+**Model limits:** cargo is a rectangular box, the cabin a rectangle. Fuselage taper, tie-downs, CG and fuel are not modeled. Door position, sill height and seat layout are assumed (door ⅓ back from the nose, one 18" seat row per side at 30" pitch) since the specs don't carry them. Irregular items (e.g. winglets) may fit where a box wouldn't. Confirm with the operator before quoting.
 
 Fit logic lives in `src/lib/fit.ts` (pure, unit-tested). Aircraft specs live in `src/data/aircraft.ts`.
 

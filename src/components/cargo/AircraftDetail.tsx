@@ -108,7 +108,7 @@ const AircraftDetail = ({ result, clearance }: { result: FitResult; clearance: n
 
         {/* Cabin */}
         <Section
-          title="Cabin floor plan (top-down, no stacking)"
+          title={`Cabin floor plan (top-down, no stacking${layout.seats.length ? `, ${layout.seats.length} seats in` : ", seats out"})`}
           aside={`${Math.round(layout.floorUtilization * 100)}% floor used`}
         >
           <CabinLayout result={result} />
@@ -128,6 +128,18 @@ const AircraftDetail = ({ result, clearance }: { result: FitResult; clearance: n
                 </span>
                 <Check ok={c.door} label="door" />
                 <Check ok={c.cabin} label="cabin" />
+                {c.turn?.needed && (
+                  <Check
+                    ok={c.turn.ok}
+                    label={
+                      c.turn.ok
+                        ? `turn ${Math.round(c.turn.entryAngle)}°${!c.turn.okSeatsIn ? `, ${c.turn.seatsToPull} seats out` : ""}`
+                        : c.turn.okSeatsOut
+                          ? `turn: pull ${c.turn.seatsToPull} seats`
+                          : "turn"
+                    }
+                  />
+                )}
               </li>
             ))}
           </ul>
@@ -253,6 +265,18 @@ const CabinLayout = ({ result }: { result: FitResult }) => {
       <text x={W - pad} y={pad - 8} fontSize={11} textAnchor="end" className="fill-muted-foreground">
         {ac.cabinWidth}" wide · grid = 1 ft
       </text>
+      {layout.seats.map((st, i) => {
+        const x = pad + inset.x + st.x * scale, y = pad + inset.y + st.y * scale;
+        return (
+          <g key={`seat-${i}`} opacity={0.75}>
+            <rect x={x} y={y} width={st.w * scale} height={st.h * scale} rx={3} className="fill-muted-foreground/30 stroke-muted-foreground/60" strokeWidth={1} />
+            <rect x={x} y={y} width={4} height={st.h * scale} rx={1} className="fill-muted-foreground/60" />
+            {st.removable && (
+              <title>Removable seat</title>
+            )}
+          </g>
+        );
+      })}
       {layout.placements.map((p, i) => {
         const x = pad + inset.x + p.x * scale;
         const y = pad + inset.y + p.y * scale;

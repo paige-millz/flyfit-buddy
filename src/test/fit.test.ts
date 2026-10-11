@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { AIRCRAFT_DB, type Aircraft, type CargoItem } from "@/data/aircraft";
-import { cabinFit, calcPayload, DEFAULT_OPTIONS, doorFit, evaluate, layoutFloor, rankFleet } from "@/lib/fit";
+import { cabinFit, calcPayload, DEFAULT_OPTIONS, doorFit, evaluate, layoutFloor, rankFleet, seatLayout, turnGeometry } from "@/lib/fit";
 
 const ac = (id: string) => AIRCRAFT_DB.find((a) => a.id === id) as Aircraft;
 const item = (p: Partial<CargoItem>): CargoItem => ({
@@ -76,10 +76,36 @@ describe("layoutFloor", () => {
       }
     }
   });
+  it("works around seats and reports them", () => {
+    const seats = seatLayout(c208);
+    expect(seats.length).toBeGreaterThanOrEqual(6);
+    expect(seats.length).toBeLessThanOrEqual(c208.seats);
+    const r = layoutFloor([item({ length: 40, width: 30, height: 20, quantity: 8 })], c208, 0, seats);
+    expect(r.seats).toBe(seats);
+    for (const p of r.placements)
+      for (const st of seats) {
+        const overlap = p.x < st.x + st.w && p.x + p.w > st.x && p.y < st.y + st.h && p.y + p.h > st.y;
+        expect(overlap).toBe(false);
+      }
+    expect(r.unplaced.length).toBeGreaterThan(0);
+  });
   it("reports units that don't fit on the floor", () => {
     const r = layoutFloor([item({ length: 60, width: 60, height: 50, quantity: 3, upright: true })], c208);
     expect(r.placements).toHaveLength(2);
     expect(r.unplaced).toHaveLength(1);
+  });
+});
+
+describe("turnGeometry", () => {
+  it("straight in when the item is narrower than the slot and short", () => {
+    const g = turnGeometry(40, 20, 28);
+    expect(g.entryAngle).toBeCloseTo(45.6, 0);
+  });
+  it("needs more width as the item gets longer", () => {
+    expect(turnGeometry(80, 20, 24).widthNeeded).toBeGreaterThan(turnGeometry(60, 20, 24).widthNeeded);
+  });
+  it("a needle can come in almost flat and needs almost no width", () => {
+    expect(turnGeometry(100, 0.001, 24).widthNeeded).toBeLessThan(1);
   });
 });
 
@@ -89,12 +115,39 @@ describe("evaluate / rankFleet", () => {
     expect(r.verdict).toBe("no-go");
     expect(r.reasons[0]).toMatch(/Door too small for Crate/);
   });
-  it("check when a long item must turn into the cabin", () => {
-    const r = evaluate([item({ length: 100, width: 20, height: 20 })], ac("pc-12"), opts);
-    expect(r.verdict).toBe("check");
+  it("no-go when the swing into the cabin can't be made", () => {
+    // 100" long, 20" across through a 24" door: must enter at ≥56°, swing needs ~94" of a 60" cabin
+    const r = evaluate([item({ name: "Spar", length: 100, width: 20, height: 20 })], ac("pc-12"), opts);
+    expect(r.verdict).toBe("no-go");
+    expect(r.reasons[0]).toMatch(/Spar can't make the turn/);
+  });
+  it("check when the turn only works with removable seats pulled, go once pulled", () => {
+    // 65" × 16" through the PC-12's 24" door: enters at ~42°, swing needs ~55" of the 60" cabin —
+    // fine with seats out, not with a seat opposite the door (42" left). 3 seats in the zone, 6 removable.
+    const pc = ac("pc-12");
+    const long = item({ name: "Beam", length: 65, width: 16, height: 16 });
+    const withSeats = evaluate([long], pc, opts);
+    const t = withSeats.checks[0].turn!;
+    expect(t.needed).toBe(true);
+    expect(t.okSeatsIn).toBe(false);
+    expect(t.okSeatsOut).toBe(true);
+    expect(t.aft).toBe(true);
+    expect(t.seatsToPull).toBeGreaterThan(0);
+    expect(withSeats.verdict).toBe("check");
+    expect(withSeats.reasons[0]).toMatch(/Beam needs \d seats? pulled/);
+    expect(evaluate([long], pc, { ...opts, removeSeats: true }).verdict).toBe("go");
   });
   it("go for a small box", () => {
     expect(evaluate([item({})], ac("pc-12"), opts).verdict).toBe("go");
+  });
+  it("seats reduce the floor; pulling them frees it", () => {
+    // 10 seats in a Caravan: 8 × 40×30 crates don't all fit with seats in (0 removable), so CHECK
+    const crates = [item({ length: 40, width: 30, height: 20, weight: 50, quantity: 8 })];
+    expect(evaluate(crates, ac("caravan-208"), opts).verdict).toBe("check");
+    // PC-12 with 6 removable: pulling seats places more
+    const withSeats = evaluate(crates, ac("pc-12"), opts).layout.placements.length;
+    const pulled = evaluate(crates, ac("pc-12"), { ...opts, removeSeats: true }).layout.placements.length;
+    expect(pulled).toBeGreaterThan(withSeats);
   });
   it("ranks workable aircraft first", () => {
     const ranked = rankFleet([item({ length: 40, width: 40, height: 40, weight: 300 })], AIRCRAFT_DB, opts);

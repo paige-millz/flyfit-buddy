@@ -45,7 +45,7 @@ const OptionsPanel = ({ options, onChange }: OptionsPanelProps) => {
             </Row>
           </>
         )}
-        <Row label="Pull removable seats" hint="Credits seat weight back to payload">
+        <Row label="Pull removable seats" hint="Credits seat weight; clears the swing zone inside the door">
           <Switch checked={options.removeSeats} onCheckedChange={(v) => set({ removeSeats: v })} />
         </Row>
         <Row label="Clearance" hint="Kept free on every door & cabin dimension">
